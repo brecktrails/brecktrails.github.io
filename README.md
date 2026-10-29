@@ -1,5 +1,7 @@
 # Breck Trail Explorer
 
+**Live site: https://brecktrails.github.io**
+
 An interactive version of the Breckenridge trail map for planning a ski trip. Tap any run on the official map to see its length, vertical drop, steepness and elevation profile (from [OpenSkiMap](https://openskimap.org)), and jump to YouTube videos of it. Tools for first-time visitors: run suggestions by level, a filterable list of all runs, a guide to the five peaks, difficulty highlighting and tips.
 
 Unofficial planning tool, not affiliated with Breckenridge Ski Resort or Vail Resorts. Trail map © Breckenridge Ski Resort. Run data © OpenStreetMap contributors via OpenSkiMap.
@@ -15,6 +17,7 @@ Unofficial planning tool, not affiliated with Breckenridge Ski Resort or Vail Re
 | `public/data/breck.json` | Run label positions on the map + OpenSkiMap details per run |
 | `public/trailmap*.jpg` | The trail map rendered from the official PDF (with the sponsor/ad panes removed) |
 | `tools/` | One-off build tools that produced the data and map images |
+| `.github/workflows/pages.yml` | Automatic publishing to GitHub Pages |
 
 ## Run it locally
 
@@ -25,6 +28,10 @@ powershell -ExecutionPolicy Bypass -File tools/serve.ps1
 ```
 
 Then open http://localhost:8765/public/index.html
+
+## Publishing
+
+Every change merged into `main` is published automatically by the GitHub Actions workflow in `.github/workflows/pages.yml`, which deploys the `public/` folder to GitHub Pages. Progress shows on the repo's **Actions** tab; the site updates a minute or two after a merge.
 
 ## Rebuilding the map and data
 
