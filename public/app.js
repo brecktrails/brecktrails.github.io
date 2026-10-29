@@ -13,6 +13,9 @@ const norm = s => s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, 
 const fmtFt = m => Math.round(m * FT).toLocaleString() + ' ft';
 const fmtLen = m => m * FT >= 5280 ? (m * FT / 5280).toFixed(1) + ' mi' : fmtFt(m);
 const deg = pct => Math.round(Math.atan(pct / 100) * 180 / Math.PI) + '°';
+// "Lower 4 O’Clock" -> "lower-4-oclock": used in share links and the run/<slug>/ preview pages
+const slugOf = name => norm(name).replace(/ /g, '-');
+const SITE_URL = 'https://brecktrails.github.io/';
 
 // ---------- Difficulty ----------
 // OpenSkiMap difficulty -> North American trail sign. `level` groups them for filters.
@@ -112,16 +115,22 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   $('official-link').href = OFFICIAL_PDF;
 
   // ---------- Landing <-> map routing ----------
+  // #map shows the map; #run/<slug> shows the map with that run open (what share links point to)
+  const BY_SLUG = Object.fromEntries(ALL.map(r => [slugOf(r.name), r.name]));
   let mapReady = false;
   function route() {
-    const showMap = location.hash === '#map';
+    const runName = BY_SLUG[decodeURIComponent(location.hash.match(/^#run\/(.+)$/)?.[1] || '')];
+    const showMap = location.hash === '#map' || !!runName;
     $('landing').hidden = showMap;
     $('app').hidden = !showMap;
     document.body.style.overflow = showMap ? 'hidden' : '';
     if (showMap && !mapReady) { initMap(); mapReady = true; }
     else if (showMap) map.invalidateSize();
+    if (runName && selected !== runName) { showView({ type: 'run', name: runName }); flyToRun(runName); }
   }
   window.addEventListener('hashchange', route);
+  // Keep the address bar pointing at what's on screen, without adding history entries
+  const setHash = h => { if (location.hash !== h) history.replaceState(null, '', h); };
 
   // ---------- Map ----------
   let map;
@@ -255,6 +264,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
     panel.scrollTop = view.scroll || 0;
     document.querySelectorAll('.tool[data-open]').forEach(b => b.setAttribute('aria-current', b.dataset.open === view.type));
     highlightRun(view.type === 'run' ? view.name : null);
+    setHash(view.type === 'run' ? '#run/' + slugOf(view.name) : '#map');
   }
   function back() {
     stack.pop();
@@ -266,6 +276,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
     document.body.classList.remove('panel-open');
     highlightRun(null);
     document.querySelectorAll('.tool[data-open]').forEach(b => b.setAttribute('aria-current', 'false'));
+    setHash('#map');
   }
   // Remember scroll position of the view we're leaving, so Back returns to the same spot
   const saveScroll = () => { if (stack.length) stack[stack.length - 1].scroll = panel.scrollTop; };
@@ -279,7 +290,10 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
     run({ name }) {
       const r = RUNS[name], run = r.run, d = diffOf(run);
       const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent('breckenridge ' + name.replace(/’/g, "'"));
-      let html = `<h2>${esc(name)}</h2>
+      let html = `<div class="run-head"><h2>${esc(name)}</h2>
+          <button class="share" data-share="${esc(name)}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Share</button></div>
         <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· Peak ${r.peak}</span></div>`;
       if (run) {
         html += `<p class="diff-note">Rating from OpenSkiMap. The run’s color on the trail map is the resort’s official rating.</p>`;
@@ -441,11 +455,35 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
       .sort((a, b) => sort.asc ? a.name.localeCompare(b.name) : sort.key(b) - sort.key(a) || a.name.localeCompare(b.name));
   }
 
+  // ---------- Sharing ----------
+  // Links point at run/<slug>/, a small page with a preview card (built by tools/make-share-pages.html)
+  // that forwards to #run/<slug>.
+  async function shareRun(name) {
+    const r = RUNS[name], d = diffOf(r.run);
+    const url = SITE_URL + 'run/' + slugOf(name) + '/';
+    const text = `${name} at Breckenridge: ${d.label}, Peak ${r.peak}`;
+    if (navigator.share && isTouch) {
+      try { await navigator.share({ title: name, text, url }); } catch { /* closed the share sheet */ }
+      return;
+    }
+    try { await navigator.clipboard.writeText(url); toast('Link copied: paste it anywhere'); }
+    catch { prompt('Copy this link:', url); }
+  }
+  let toastTimer;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  }
+
   // ---------- Panel interactions (one delegated handler) ----------
   body.addEventListener('click', e => {
     const t = e.target.closest('button');
     if (!t) return;
     const view = stack[stack.length - 1];
+    if (t.dataset.share) return shareRun(t.dataset.share);
     if (t.dataset.run) return openRun(t.dataset.run, { from: view.type });
     if (t.dataset.set) {
       suggestState[t.dataset.set] = t.dataset.val;
