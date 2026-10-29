@@ -99,6 +99,44 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   });
 })();
 
+// ---------- Weather ----------
+// Forecast from Open-Meteo (free, no account) for two spots: the Peak 8 base and the top of the
+// Imperial SuperChair. Open-Meteo adjusts temperatures to the elevation we pass in.
+const WX_SPOTS = [
+  { name: 'Base', sub: 'Peak 8 base · 9,600 ft', lat: 39.4808, lon: -106.0666, elev: 2926 },
+  { name: 'Summit', sub: 'Top of Imperial · 12,840 ft', lat: 39.4757, lon: -106.0961, elev: 3914 },
+];
+const WX_URL = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
+  latitude: WX_SPOTS.map(s => s.lat).join(','), longitude: WX_SPOTS.map(s => s.lon).join(','),
+  elevation: WX_SPOTS.map(s => s.elev).join(','),
+  current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,is_day',
+  daily: 'weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,wind_gusts_10m_max',
+  temperature_unit: 'fahrenheit', wind_speed_unit: 'mph', precipitation_unit: 'inch',
+  timezone: 'America/Denver', forecast_days: 5,
+});
+// WMO weather codes -> [label, emoji]
+function wxCode(code, day = 1) {
+  if (code === 0) return ['Clear', day ? '☀️' : '🌙'];
+  if (code <= 2) return ['Partly cloudy', day ? '🌤️' : '☁️'];
+  if (code === 3) return ['Cloudy', '☁️'];
+  if (code <= 48) return ['Fog', '🌫️'];
+  if (code <= 57) return ['Drizzle', '🌦️'];
+  if (code <= 67) return ['Rain', '🌧️'];
+  if (code <= 77) return ['Snow', '🌨️'];
+  if (code <= 82) return ['Rain showers', '🌦️'];
+  if (code <= 86) return ['Snow showers', '❄️'];
+  return ['Thunderstorms', '⛈️'];
+}
+let wxCache = null; // { at, data } so reopening the panel doesn't refetch every time
+async function getWeather() {
+  if (wxCache && Date.now() - wxCache.at < 15 * 60e3) return wxCache.data;
+  const res = await fetch(WX_URL);
+  if (!res.ok) throw new Error('weather ' + res.status);
+  const data = await res.json();
+  wxCache = { at: Date.now(), data };
+  return data;
+}
+
 (async function main() {
   const data = await fetch('data/breck.json').then(r => r.json());
   const { width: W, height: H, labels, runs } = data;
@@ -379,6 +417,45 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
         <p class="source">Peak groupings are based on where each run sits on the trail map.</p>`;
     },
 
+    weather() {
+      body.innerHTML = `<h2>Mountain weather</h2><p class="intro">Loading the latest forecast…</p>`;
+      getWeather().then(([base, top]) => {
+        if (stack[stack.length - 1]?.type !== 'weather') return; // panel moved on while loading
+        const spot = (s, w) => {
+          const [label, icon] = wxCode(w.current.weather_code, w.current.is_day);
+          return `<div class="wx-spot"><div class="wx-name">${s.name}</div><div class="sub">${s.sub}</div>
+            <div class="wx-now"><span class="wx-icon">${icon}</span><span class="wx-temp">${Math.round(w.current.temperature_2m)}°</span></div>
+            <div class="wx-cond">${label}</div>
+            <div class="sub">Feels like ${Math.round(w.current.apparent_temperature)}°</div>
+            <div class="sub">Wind ${Math.round(w.current.wind_speed_10m)} mph, gusts ${Math.round(w.current.wind_gusts_10m)}</div></div>`;
+        };
+        // Callouts a first-timer would want to know about
+        const alerts = [];
+        if (top.current.wind_gusts_10m >= 40) alerts.push(['💨', 'Strong winds up top', 'Upper lifts like Imperial and the T-bar may be on wind hold.']);
+        const snow24 = top.daily.snowfall_sum[0] + top.daily.snowfall_sum[1];
+        if (snow24 >= 3) alerts.push(['❄️', 'Fresh snow coming', `About ${snow24.toFixed(0)}" forecast up top today and tomorrow.`]);
+        if (top.current.apparent_temperature <= 0) alerts.push(['🥶', 'Bitter cold up top', 'Cover all skin; frostbite can happen fast in wind.']);
+        const days = top.daily.time.map((t, i) => {
+          const [label, icon] = wxCode(base.daily.weather_code[i]);
+          const day = i === 0 ? 'Today' : new Date(t + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
+          const snow = top.daily.snowfall_sum[i];
+          return `<li><span class="wx-day">${day}</span><span title="${label}">${icon}</span>
+            <span class="wx-hilo">${Math.round(base.daily.temperature_2m_max[i])}° <span class="sub">/ ${Math.round(base.daily.temperature_2m_min[i])}°</span></span>
+            <span class="wx-snow">${snow >= 0.1 ? '❄️ ' + snow.toFixed(1) + '"' : '<span class="sub">no snow</span>'}</span></li>`;
+        }).join('');
+        const updated = new Date(wxCache.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        body.innerHTML = `<h2>Mountain weather</h2><p class="intro">Updated ${updated}</p>
+          <div class="wx-spots">${spot(WX_SPOTS[0], base)}${spot(WX_SPOTS[1], top)}</div>
+          ${alerts.map(([i, t, d]) => `<div class="wx-alert"><span>${i}</span><div><strong>${t}</strong><span>${d}</span></div></div>`).join('')}
+          <h3>Next 5 days</h3>
+          <ul class="wx-days">${days}</ul>
+          <p class="source">Temperatures for the base; snow for the summit. Forecast by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>, modeled for these elevations, not live station readings. Check the resort for lift and wind holds.</p>`;
+      }).catch(() => {
+        if (stack[stack.length - 1]?.type !== 'weather') return;
+        body.innerHTML = `<h2>Mountain weather</h2><p class="empty">Couldn’t load the forecast. Check your connection and try again.</p>`;
+      });
+    },
+
     tips() {
       body.innerHTML = `<h2>First-timer tips</h2>
         <ul class="tips">${TIPS.map(([t, d]) => `<li><strong>${t}</strong><span>${d}</span></li>`).join('')}</ul>
@@ -565,6 +642,11 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   resultsList.addEventListener('click', e => { const li = e.target.closest('li[data-name]'); if (li) choose(li.dataset.name); });
   document.addEventListener('click', e => { if (!e.target.closest('.search')) hideResults(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); hideResults(); } });
+
+  // Current conditions on the toolbar button, so the weather is visible without opening anything
+  getWeather().then(([base]) => {
+    $('wx-chip').textContent = `${wxCode(base.current.weather_code, base.current.is_day)[1]} ${Math.round(base.current.temperature_2m)}°`;
+  }).catch(() => {});
 
   route();
   window.APP = { get map() { return map; }, RUNS, openRun, showView, levelsOn }; // handy for debugging in the console
