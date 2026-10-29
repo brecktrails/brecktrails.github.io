@@ -2,7 +2,7 @@
 
 **Live site: https://brecktrails.github.io**
 
-An interactive version of the Breckenridge trail map for planning a ski trip. Tap any run on the official map to see its length, vertical drop, steepness and elevation profile (from [OpenSkiMap](https://openskimap.org)), and jump to YouTube videos of it. Tools for first-time visitors: run suggestions by level, a filterable list of all runs, a guide to the five peaks, difficulty highlighting, live mountain weather (from [Open-Meteo](https://open-meteo.com)) and tips.
+An interactive version of the Breckenridge trail map for planning a ski trip. Tap any run on the official map to see its length, vertical drop, steepness and elevation profile (from [OpenSkiMap](https://openskimap.org)), and jump to YouTube videos of it. Tools for first-time visitors: run suggestions by level, a filterable list of all runs, a guide to the five peaks, side-by-side run comparison, difficulty highlighting, live mountain weather (from [Open-Meteo](https://open-meteo.com)) and tips.
 
 Unofficial planning tool, not affiliated with Breckenridge Ski Resort or Vail Resorts. Trail map © Breckenridge Ski Resort. Run data © OpenStreetMap contributors via OpenSkiMap.
 

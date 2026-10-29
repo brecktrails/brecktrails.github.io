@@ -291,6 +291,32 @@ select {
 .peak .btns { display: flex; gap: 8px; }
 .peak .btns .btn { flex: 1; }
 
+/* Compare */
+.badge {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+}
+.cmp-toggle {
+  display: block; margin: 10px 0 4px; padding: 7px 12px; border: 1px dashed var(--accent); border-radius: 999px;
+  background: transparent; color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.cmp-toggle[aria-pressed="true"] { border-style: solid; background: var(--accent-soft); }
+.cmp-runs { list-style: none; margin: 8px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cmp-runs li { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--bg); }
+.cmp-runs .link { flex: 1; border: 0; background: none; padding: 0; text-align: left; font-weight: 650; font-size: 15px; cursor: pointer; }
+.icon-btn.sm { width: 30px; height: 30px; font-size: 18px; background: var(--surface); }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.profile .cmp-chart { width: 100%; height: auto; display: block; }
+.cmp-chart .grid { stroke: var(--border); stroke-width: 1; }
+.cmp-chart .axis { font-size: 9px; fill: var(--muted); }
+.cmp-table-wrap { overflow-x: auto; margin: 0 -4px; }
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cmp-table th, .cmp-table td { padding: 8px 6px; border-top: 1px solid var(--border); text-align: left; vertical-align: top; }
+.cmp-table thead th { border-top: 0; font-size: 13px; }
+.cmp-table thead .swatch { margin-right: 5px; vertical-align: -1px; }
+.cmp-table tbody th { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
+.cmp-table td.best { font-weight: 750; }
+
 /* Weather */
 .wx-chip { font-size: 14px; font-weight: 700; }
 .wx-spots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 12px; }
