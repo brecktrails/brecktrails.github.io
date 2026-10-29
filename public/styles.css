@@ -55,6 +55,7 @@ svg { flex: none; }
   background: linear-gradient(180deg, rgba(8, 22, 40, .35) 0%, rgba(8, 22, 40, .72) 45%, rgba(8, 22, 40, .94) 100%);
 }
 .landing-inner { position: relative; width: min(880px, 100%); margin: 0 auto; }
+.landing-logo { display: block; width: 72px; height: 72px; margin-bottom: 18px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 .eyebrow { margin: 0 0 10px; font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .85; }
 .landing h1 { margin: 0 0 14px; font-size: clamp(40px, 8vw, 72px); line-height: 1.02; letter-spacing: -.02em; }
 .lead { margin: 0 0 28px; max-width: 620px; font-size: clamp(17px, 2.2vw, 20px); line-height: 1.5; opacity: .92; }
@@ -66,6 +67,18 @@ svg { flex: none; }
 }
 .cta:hover { transform: translateY(-2px); }
 .cta svg { width: 22px; height: 22px; }
+.cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.cta-secondary {
+  display: inline-flex; align-items: center; gap: 8px; padding: 15px 22px; border-radius: 14px;
+  border: 1.5px solid rgba(255,255,255,.6); background: rgba(255,255,255,.08); color: #fff;
+  font-size: 16px; font-weight: 650; cursor: pointer; backdrop-filter: blur(6px);
+}
+.cta-secondary:hover { background: rgba(255,255,255,.16); }
+.cta-secondary svg { width: 20px; height: 20px; }
+.install-help {
+  max-width: 520px; margin: 14px 0 0; padding: 12px 14px; border-radius: 12px;
+  background: rgba(255,255,255,.12); font-size: 14px; line-height: 1.5;
+}
 .features {
   list-style: none; margin: 44px 0 0; padding: 0;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
@@ -87,7 +100,7 @@ svg { flex: none; }
 }
 .header-row { display: flex; align-items: center; gap: 16px; height: 60px; padding: 0 16px; }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; font-weight: 750; font-size: 17px; white-space: nowrap; }
-.brand svg { width: 26px; height: 26px; color: var(--accent); }
+.brand img { width: 30px; height: 30px; border-radius: 7px; flex: none; }
 .search { position: relative; flex: 1; max-width: 460px; margin-left: auto; }
 .search-icon { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .search input {

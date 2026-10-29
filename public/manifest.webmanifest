@@ -1,0 +1,16 @@
+{
+  "name": "Breck Trail Explorer",
+  "short_name": "Brecktrails",
+  "description": "Explore Breckenridge's trail map: tap any run for its stats, get run ideas for your level, and watch videos before you go.",
+  "start_url": "./#map",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d2440",
+  "theme_color": "#0d2440",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/logo.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

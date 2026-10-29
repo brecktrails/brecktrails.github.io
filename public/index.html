@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Breck Trail Explorer</title>
   <meta name="description" content="Explore Breckenridge's trail map: tap any run for its stats, get run ideas for your level, and watch videos before you go.">
+  <link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0d2440">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Brecktrails">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -13,11 +21,18 @@
   <section id="landing" class="landing">
     <div class="landing-bg" aria-hidden="true"></div>
     <div class="landing-inner">
+      <img class="landing-logo" src="icons/logo.svg" alt="" width="72" height="72">
       <p class="eyebrow">Breckenridge, Colorado · 5 peaks · <span id="run-count">190+</span> runs</p>
       <h1>Breck Trail Explorer</h1>
       <p class="lead">Plan your days on the mountain. Tap any run on the trail map to see how long and steep it is, get run ideas for your level, and watch videos before you go.</p>
-      <a class="cta" href="#map">Open Trail Map
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <div class="cta-row">
+        <a class="cta" href="#map">Open Trail Map
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        <button id="install" class="cta-secondary" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></svg>
+          Add to home screen</button>
+      </div>
+      <p id="install-help" class="install-help" hidden></p>
       <ul class="features">
         <li><strong>Tap any run</strong><span>Length, vertical drop, steepness and an elevation profile.</span></li>
         <li><strong>Runs for your level</strong><span>Tell it how you ski and get suggestions, or highlight every green, blue or black.</span></li>
@@ -32,7 +47,7 @@
     <header class="topbar">
       <div class="header-row">
         <a class="brand" href="#" aria-label="Breck Trail Explorer home">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 20 9 7l4 7 2-3 7 9z"/></svg>
+          <img src="icons/logo.svg" alt="" width="30" height="30">
           <span>Breck Trail Explorer</span>
         </a>
         <div class="search">

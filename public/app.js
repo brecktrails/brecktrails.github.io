@@ -76,6 +76,26 @@ const TIPS = [
   ['Weather changes fast', 'Sun at the base can be a whiteout up top. Bring goggles for low light and an extra layer for the high lifts.'],
 ];
 
+// ---------- Install as an app ----------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+(function setupInstall() {
+  const btn = $('install'), help = $('install-help');
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (standalone) return; // already installed
+  // Chrome, Edge and Android offer a real install prompt
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; btn.hidden = false; });
+  window.addEventListener('appinstalled', () => { btn.hidden = true; help.hidden = true; });
+  // iPhone/iPad Safari has no prompt, so show how to do it by hand
+  const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (iOS) btn.hidden = false;
+  btn.addEventListener('click', async () => {
+    if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; return; }
+    help.innerHTML = 'On iPhone: tap the <strong>Share</strong> button <span aria-hidden="true">(□↑)</span> in Safari, then <strong>Add to Home Screen</strong>.';
+    help.hidden = false;
+  });
+})();
+
 (async function main() {
   const data = await fetch('data/breck.json').then(r => r.json());
   const { width: W, height: H, labels, runs } = data;
