@@ -1,0 +1,75 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>extract</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="build_labels.js"></script>
+<script src="build_runs.js"></script>
+<style>body{margin:0;background:#fff} canvas{display:block}</style>
+</head><body>
+<canvas id="c"></canvas>
+<script>
+// Build tool, served by tools/serve.ps1: loads the trail map PDF, extracts run labels,
+// and can render the map to an image. Results are saved via PUT /__save/<path>.
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const save = (path, body) => fetch('/__save/' + path, { method: 'PUT', body });
+
+// Map cleanup (PDF points, origin top-left):
+// - CROP_BOTTOM: the mountain painting ends here; below it is the partners/sponsors strip
+// - PATCHES: overlay boxes to remove by painting the original artwork back over them
+const CROP_BOTTOM = 921; // a few points above the painting's edge, which has a faint white row
+const PATCHES = [
+  [4, 709, 170, 925], // "Emergencies only" / avalanche terrain box, bottom-left
+  [953, 669, 1091, 915], // Epic Mountain Rewards ad, bottom center-right (incl. its white border)
+];
+// The mountain painting is one embedded image; this is where the PDF places it
+const PAINTING = { id: 'img_p0_5', x: -14.6, y: -37.4, w: 1482.6, h: 962.5 };
+(async () => {
+  const pdf = await pdfjsLib.getDocument('/pdf_download/breck_map.pdf').promise;
+  window.PAGE = await pdf.getPage(1);
+  // Keep our own copy of the painting; pdf.js frees its images after each render.
+  // (A render followed by getOperatorList is the sequence that reliably leaves it in page.objs.)
+  const v1 = PAGE.getViewport({ scale: 1 });
+  const tmp = Object.assign(document.createElement('canvas'), { width: v1.width, height: v1.height });
+  await PAGE.render({ canvasContext: tmp.getContext('2d'), viewport: v1 }).promise;
+  await PAGE.getOperatorList();
+  const img = await new Promise((r, reject) => { PAGE.objs.get(PAINTING.id, r); setTimeout(() => reject(new Error('painting not loaded')), 15000); });
+  window.PAINT = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height });
+  PAINT.getContext('2d').drawImage(img.bitmap, 0, 0);
+  window.READY = true;
+})().catch(e => { window.ERR = String(e); });
+
+window.saveLabels = async () => {
+  const labels = await buildLabels(PAGE);
+  const vp = PAGE.getViewport({ scale: 1 });
+  await save('tools/out/labels.json', JSON.stringify({ width: vp.width, height: CROP_BOTTOM, labels }, null, 1));
+  return labels.length;
+};
+window.saveRuns = async () => {
+  const { labels } = await (await fetch('/tools/out/labels.json')).json();
+  const result = await buildRuns([...new Set(labels.map(l => l.name))]);
+  await save('tools/out/runs.json', JSON.stringify(result));
+  return { matched: Object.keys(result.runs).length, unmatched: result.unmatched };
+};
+// Combine labels + run details into the single file the app loads
+window.saveBundle = async () => {
+  const labels = await (await fetch('/tools/out/labels.json')).json();
+  const { runs } = await (await fetch('/tools/out/runs.json')).json();
+  await save('public/data/breck.json', JSON.stringify({ ...labels, runs }));
+  return Object.keys(runs).length;
+};
+window.renderMap = async (scale, path, quality) => {
+  const v = PAGE.getViewport({ scale });
+  const cv = document.getElementById('c');
+  cv.width = Math.round(v.width); cv.height = Math.round(CROP_BOTTOM * scale);
+  const ctx = cv.getContext('2d');
+  await PAGE.render({ canvasContext: ctx, viewport: v }).promise;
+  const kx = PAINT.width / PAINTING.w, ky = PAINT.height / PAINTING.h;
+  for (const [x0, y0, x1, y1] of PATCHES) {
+    ctx.drawImage(PAINT,(x0 - PAINTING.x) * kx, (y0 - PAINTING.y) * ky, (x1 - x0) * kx, (y1 - y0) * ky,
+      x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale);
+  }
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', quality));
+  await save(path, blob);
+  return [cv.width, cv.height, blob.size];
+};
+</script>
+</body></html>

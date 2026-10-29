@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Breck Trail Explorer</title>
+  <meta name="description" content="Explore Breckenridge's trail map: tap any run for its stats, get run ideas for your level, and watch videos before you go.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Landing page -->
+  <section id="landing" class="landing">
+    <div class="landing-bg" aria-hidden="true"></div>
+    <div class="landing-inner">
+      <p class="eyebrow">Breckenridge, Colorado · 5 peaks · <span id="run-count">190+</span> runs</p>
+      <h1>Breck Trail Explorer</h1>
+      <p class="lead">Plan your days on the mountain. Tap any run on the trail map to see how long and steep it is, get run ideas for your level, and watch videos before you go.</p>
+      <a class="cta" href="#map">Open Trail Map
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <ul class="features">
+        <li><strong>Tap any run</strong><span>Length, vertical drop, steepness and an elevation profile.</span></li>
+        <li><strong>Runs for your level</strong><span>Tell it how you ski and get suggestions, or highlight every green, blue or black.</span></li>
+        <li><strong>See it before you ski it</strong><span>One tap to YouTube videos of any run.</span></li>
+      </ul>
+    </div>
+    <p class="disclaimer">Unofficial planning tool, not affiliated with Breckenridge Ski Resort or Vail Resorts. Trail map © Breckenridge Ski Resort. Run data © OpenStreetMap contributors via OpenSkiMap. Always check conditions and the official map on the mountain.</p>
+  </section>
+
+  <!-- Map view -->
+  <section id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="header-row">
+        <a class="brand" href="#" aria-label="Breck Trail Explorer home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 20 9 7l4 7 2-3 7 9z"/></svg>
+          <span>Breck Trail Explorer</span>
+        </a>
+        <div class="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="search" type="search" placeholder="Find a run…" autocomplete="off" aria-label="Find a run">
+          <ul id="results" class="results" role="listbox" hidden></ul>
+        </div>
+        <a class="official" id="official-link" target="_blank" rel="noopener">Official map ↗</a>
+      </div>
+      <nav class="toolbar" aria-label="Tools">
+        <button class="tool" data-open="suggest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>
+          Suggest a run</button>
+        <button class="tool" data-open="list">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          All runs</button>
+        <button class="tool" data-open="peaks">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 20 9 7l4 7 2-3 7 9z"/></svg>
+          Peaks</button>
+        <div class="levels" role="group" aria-label="Highlight runs on the map by difficulty">
+          <span class="levels-label">Show</span>
+          <button class="level" data-level="green" aria-pressed="false" title="Highlight easiest runs (green circle)"></button>
+          <button class="level" data-level="blue" aria-pressed="false" title="Highlight more difficult runs (blue square)"></button>
+          <button class="level" data-level="black" aria-pressed="false" title="Highlight most difficult runs (black diamond)"></button>
+          <button class="level" data-level="expert" aria-pressed="false" title="Highlight expert runs (double black diamond)"></button>
+        </div>
+        <button class="tool" data-open="tips">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5v.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          First-timer tips</button>
+      </nav>
+    </header>
+
+    <div class="map-wrap">
+      <div id="map" aria-label="Breckenridge trail map"></div>
+      <div id="hovercard" class="hovercard" hidden></div>
+    </div>
+
+    <aside id="panel" class="panel" aria-live="polite" hidden>
+      <div class="panel-head">
+        <button id="back" class="icon-btn" aria-label="Back" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="grabber"></div>
+        <button id="close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div id="panel-body"></div>
+    </aside>
+  </section>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
