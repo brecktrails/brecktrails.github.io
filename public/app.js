@@ -332,7 +332,8 @@ async function getWeather() {
           <button class="share" data-share="${esc(name)}">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Share</button></div>
-        <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· Peak ${r.peak}</span></div>`;
+        <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· Peak ${r.peak}</span></div>
+        ${compareButton(name)}`;
       if (run) {
         html += `<p class="diff-note">Rating from OpenSkiMap. The run’s color on the trail map is the resort’s official rating.</p>`;
         const stats = [];
@@ -456,6 +457,42 @@ async function getWeather() {
       });
     },
 
+    compare() {
+      if (compareList.length < 2) {
+        body.innerHTML = `<h2>Compare runs</h2>
+          <p class="intro">See up to ${MAX_COMPARE} runs side by side: stats and elevation profiles on one chart.</p>
+          ${compareList.length ? `<ul class="cmp-runs">${compareList.map(cmpChip).join('')}</ul>` : ''}
+          <p class="empty">Open any run (tap it on the map, or use search or All runs) and tap <strong>Add to compare</strong>. ${compareList.length ? 'Pick one more.' : 'Pick at least two.'}</p>`;
+        return;
+      }
+      const rs = compareList.map(n => RUNS[n]);
+      // Each row: label, value per run, and which way is "most" (to bold the standout)
+      const rows = [
+        ['Difficulty', r => diffOf(r.run).label],
+        ['Peak', r => 'Peak ' + r.peak],
+        ['Length', r => r.run?.lengthM ? fmtLen(r.run.lengthM) : '—', r => r.run?.lengthM],
+        ['Vertical drop', r => r.run?.verticalM ? fmtFt(r.run.verticalM) : '—', r => r.run?.verticalM],
+        ['Top', r => r.run?.topM ? fmtFt(r.run.topM) : '—', r => r.run?.topM],
+        ['Bottom', r => r.run?.bottomM ? fmtFt(r.run.bottomM) : '—'],
+        ['Avg grade', r => r.run?.avgGradePct ? `${r.run.avgGradePct}% (${deg(r.run.avgGradePct)})` : '—', r => r.run?.avgGradePct],
+        ['Steepest', r => r.run?.maxGradePct ? `${r.run.maxGradePct}% (${deg(r.run.maxGradePct)})` : '—', r => r.run?.maxGradePct],
+        ['Surface', r => (r.run ? tagsOf(r.run).filter(t => t !== 'Snowmaking').join(', ') : '') || '—'],
+      ];
+      const table = rows.map(([label, val, num]) => {
+        const nums = num ? rs.map(r => num(r) ?? -Infinity) : null;
+        const best = nums && Math.max(...nums) > -Infinity ? Math.max(...nums) : null;
+        return `<tr><th scope="row">${label}</th>${rs.map((r, i) =>
+          `<td class="${best !== null && nums[i] === best && rs.length > 1 ? 'best' : ''}">${val(r)}</td>`).join('')}</tr>`;
+      }).join('');
+      body.innerHTML = `<h2>Compare runs</h2>
+        <ul class="cmp-runs">${compareList.map(cmpChip).join('')}</ul>
+        ${compareProfiles(rs)}
+        <div class="cmp-table-wrap"><table class="cmp-table">
+          <thead><tr><th></th>${rs.map((r, i) => `<th scope="col"><span class="swatch" style="background:${CMP_COLORS[i]}"></span>${esc(r.name)}</th>`).join('')}</tr></thead>
+          <tbody>${table}</tbody></table></div>
+        <p class="source">Bold = the most of that stat. Stats from OpenSkiMap.</p>`;
+    },
+
     tips() {
       body.innerHTML = `<h2>First-timer tips</h2>
         <ul class="tips">${TIPS.map(([t, d]) => `<li><strong>${t}</strong><span>${d}</span></li>`).join('')}</ul>
@@ -532,6 +569,48 @@ async function getWeather() {
       .sort((a, b) => sort.asc ? a.name.localeCompare(b.name) : sort.key(b) - sort.key(a) || a.name.localeCompare(b.name));
   }
 
+  // ---------- Compare runs ----------
+  const MAX_COMPARE = 3;
+  const CMP_COLORS = ['#0b63ce', '#e8590c', '#2b8a3e'];
+  let compareList = [];
+  function compareButton(name) {
+    const on = compareList.includes(name);
+    return `<button class="cmp-toggle" data-compare="${esc(name)}" aria-pressed="${on}">${on ? '✓ In compare' : '+ Add to compare'}</button>`;
+  }
+  function toggleCompare(name) {
+    if (compareList.includes(name)) compareList = compareList.filter(n => n !== name);
+    else if (compareList.length >= MAX_COMPARE) return toast(`You can compare up to ${MAX_COMPARE} runs`);
+    else {
+      compareList.push(name);
+      if (compareList.length >= 2) toast(`${compareList.length} runs ready: tap Compare`);
+    }
+    $('cmp-count').textContent = compareList.length;
+    $('cmp-count').hidden = !compareList.length;
+  }
+  const cmpChip = (n, i) => `<li><span class="swatch" style="background:${CMP_COLORS[i]}"></span>
+    <button class="link" data-run="${esc(n)}">${esc(n)}</button>
+    <button class="icon-btn sm" data-uncompare="${esc(n)}" aria-label="Remove ${esc(n)}">×</button></li>`;
+  // Elevation profiles on one chart, in real feet, so you can see which run is longer, higher and steeper
+  function compareProfiles(rs) {
+    const withProfile = rs.map((r, i) => ({ r, i, p: r.run?.profile })).filter(x => x.p && x.p.length > 2);
+    if (!withProfile.length) return '';
+    const maxD = Math.max(...withProfile.map(x => x.p[x.p.length - 1][0]));
+    const els = withProfile.flatMap(x => x.p.map(q => q[1]));
+    const lo = Math.min(...els), hi = Math.max(...els), span = Math.max(hi - lo, 1);
+    const X = d => 40 + d / maxD * 250, Y = e => 10 + (1 - (e - lo) / span) * 120;
+    const lines = withProfile.map(x => `<polyline points="${x.p.map(([d, e]) => X(d).toFixed(1) + ',' + Y(e).toFixed(1)).join(' ')}"
+      fill="none" stroke="${CMP_COLORS[x.i]}" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`).join('');
+    return `<div class="profile"><h3>Elevation profiles</h3>
+      <svg viewBox="0 0 300 150" class="cmp-chart" role="img" aria-label="Elevation profiles of the compared runs">
+        <line x1="40" y1="10" x2="290" y2="10" class="grid"/><line x1="40" y1="130" x2="290" y2="130" class="grid"/>
+        <text x="36" y="14" class="axis" text-anchor="end">${fmtFt(hi)}</text>
+        <text x="36" y="133" class="axis" text-anchor="end">${fmtFt(lo)}</text>
+        <text x="40" y="146" class="axis">0</text>
+        <text x="290" y="146" class="axis" text-anchor="end">${fmtLen(maxD)}</text>
+        ${lines}</svg>
+      <p class="source">Each line is the longest continuous stretch OpenSkiMap has for that run, so it can be shorter than the run’s full length.</p></div>`;
+  }
+
   // ---------- Sharing ----------
   // Links point at run/<slug>/, a small page with a preview card (built by tools/make-share-pages.html)
   // that forwards to #run/<slug>.
@@ -561,6 +640,8 @@ async function getWeather() {
     if (!t) return;
     const view = stack[stack.length - 1];
     if (t.dataset.share) return shareRun(t.dataset.share);
+    if (t.dataset.compare) { toggleCompare(t.dataset.compare); t.outerHTML = compareButton(t.dataset.compare); return; }
+    if (t.dataset.uncompare) { toggleCompare(t.dataset.uncompare); return keepScroll(() => VIEWS.compare()); }
     if (t.dataset.run) return openRun(t.dataset.run, { from: view.type });
     if (t.dataset.set) {
       suggestState[t.dataset.set] = t.dataset.val;
