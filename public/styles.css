@@ -187,6 +187,20 @@ svg { flex: none; }
 .panel p { line-height: 1.5; }
 .intro { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
 
+.run-head { display: flex; align-items: flex-start; gap: 10px; }
+.run-head h2 { flex: 1; min-width: 0; }
+.share {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; height: 34px; margin-top: 2px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.share svg { width: 16px; height: 16px; color: var(--accent); }
+.share:hover { background: var(--bg); }
+.toast {
+  position: fixed; z-index: 2000; left: 50%; bottom: 28px; transform: translateX(-50%);
+  padding: 12px 18px; border-radius: 12px; background: var(--navy); color: #fff;
+  font-size: 14px; font-weight: 600; box-shadow: var(--shadow); white-space: nowrap;
+}
 .diff { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .diff svg, .icon svg { width: 20px; height: 20px; }
 .icon { display: inline-grid; place-items: center; }

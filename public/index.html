@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Breck Trail Explorer</title>
   <meta name="description" content="Explore Breckenridge's trail map: tap any run for its stats, get run ideas for your level, and watch videos before you go.">
+  <!-- Preview card when the link is pasted into Teams, Slack, iMessage etc. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Breck Trail Explorer">
+  <meta property="og:title" content="Breck Trail Explorer">
+  <meta property="og:description" content="Tap any run on the Breckenridge trail map for its stats, get run ideas for your level, and watch videos before you go.">
+  <meta property="og:url" content="https://brecktrails.github.io/">
+  <meta property="og:image" content="https://brecktrails.github.io/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="icons/logo.svg" type="image/svg+xml">
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -84,6 +94,8 @@
       <div id="map" aria-label="Breckenridge trail map"></div>
       <div id="hovercard" class="hovercard" hidden></div>
     </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
 
     <aside id="panel" class="panel" aria-live="polite" hidden>
       <div class="panel-head">
