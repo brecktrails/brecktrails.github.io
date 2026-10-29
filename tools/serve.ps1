@@ -1,6 +1,6 @@
 # Minimal static file server for local previews (no Python/Node on this machine).
 param([int]$Port = 8765, [string]$Root = (Split-Path -Parent $PSScriptRoot))
-$types = @{ '.html'='text/html; charset=utf-8'; '.js'='text/javascript'; '.css'='text/css'; '.json'='application/json'; '.png'='image/png'; '.jpg'='image/jpeg'; '.webp'='image/webp'; '.svg'='image/svg+xml'; '.pdf'='application/pdf' }
+$types = @{ '.html'='text/html; charset=utf-8'; '.js'='text/javascript'; '.css'='text/css'; '.json'='application/json'; '.png'='image/png'; '.jpg'='image/jpeg'; '.webp'='image/webp'; '.svg'='image/svg+xml'; '.pdf'='application/pdf'; '.webmanifest'='application/manifest+json' }
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
@@ -23,6 +23,7 @@ while ($listener.IsListening) {
     $ext = [IO.Path]::GetExtension($file).ToLower()
     $ctx.Response.ContentType = $(if ($types.ContainsKey($ext)) { $types[$ext] } else { 'application/octet-stream' })
     $ctx.Response.Headers.Add('Cache-Control', 'no-store')
+    $ctx.Response.ContentLength64 = $bytes.Length
     $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
   } else { $ctx.Response.StatusCode = 404 }
   $ctx.Response.Close()

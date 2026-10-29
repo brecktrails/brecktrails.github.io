@@ -15,6 +15,7 @@ Unofficial planning tool, not affiliated with Breckenridge Ski Resort or Vail Re
 | `public/app.js` | All app behavior: map, tappable runs, panels, suggestions, search |
 | `public/styles.css` | Look and layout, including the phone layout |
 | `public/data/breck.json` | Run label positions on the map + OpenSkiMap details per run |
+| `public/icons/`, `manifest.webmanifest`, `sw.js` | Logo, browser tab and home-screen icons, and what lets the site install as an app |
 | `public/trailmap*.jpg` | The trail map rendered from the official PDF (with the sponsor/ad panes removed) |
 | `tools/` | One-off build tools that produced the data and map images |
 | `.github/workflows/pages.yml` | Automatic publishing to GitHub Pages |

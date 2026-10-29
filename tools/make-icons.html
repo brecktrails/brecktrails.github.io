@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>make icons</title></head><body>
+<script>
+// Build tool, served by tools/serve.ps1: renders the SVG logos to the PNG sizes that
+// browsers and phones expect, and saves them into public/icons/ via PUT /__save/<path>.
+const JOBS = [
+  ['logo.svg', 32, 'favicon-32.png'],
+  ['logo.svg', 180, 'apple-touch-icon.png'],
+  ['logo.svg', 192, 'icon-192.png'],
+  ['logo.svg', 512, 'icon-512.png'],
+  ['logo-maskable.svg', 512, 'icon-maskable-512.png'], // full-bleed version Android crops into a circle/squircle
+];
+window.makeIcons = async () => {
+  const out = [];
+  for (const [src, size, name] of JOBS) {
+    const img = new Image();
+    img.src = '/public/icons/' + src;
+    await img.decode();
+    const cv = Object.assign(document.createElement('canvas'), { width: size, height: size });
+    cv.getContext('2d').drawImage(img, 0, 0, size, size);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    await fetch('/__save/public/icons/' + name, { method: 'PUT', body: blob });
+    out.push(name + ' ' + blob.size + 'B');
+  }
+  return out;
+};
+</script>
+</body></html>
