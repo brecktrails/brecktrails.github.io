@@ -14,18 +14,19 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Rough box around the resort, for runs OpenSkiMap hasn't tied to a ski area
-const BBOX = { w: -106.14, e: -106.0, s: 39.43, n: 39.52 };
+// Which resort to search. bbox: rough box around it, for runs OpenSkiMap hasn't tied to a ski area.
+// sections: also take named parts of a run ("Riva Ridge - Upper") as that run.
+const BRECK = { id: SKI_AREA_ID, name: 'Breckenridge', bbox: { w: -106.14, e: -106.0, s: 39.43, n: 39.52 }, sections: false };
 const firstPoint = g => g.type === 'LineString' ? g.coordinates[0] : g.type === 'Polygon' ? g.coordinates[0][0] : g.coordinates[0][0];
-const inBreck = f => f.properties.skiAreas.some(s => s.properties.id === SKI_AREA_ID) ||
-  (!f.properties.skiAreas.length && (([x, y]) => x > BBOX.w && x < BBOX.e && y > BBOX.s && y < BBOX.n)(firstPoint(f.geometry)));
+const inArea = (f, area) => f.properties.skiAreas.some(s => s.properties.id === area.id) ||
+  (!f.properties.skiAreas.length && !!area.bbox && (([x, y], b) => x > b.w && x < b.e && y > b.s && y < b.n)(firstPoint(f.geometry), area.bbox));
 
 // The search API returns at most 10 results, so common names need the resort name added
-async function searchRuns(query) {
+async function searchRuns(query, area = BRECK) {
   const r = await fetch('https://api.openskimap.org/search?query=' + encodeURIComponent(query) + '&limit=50');
   if (!r.ok) throw new Error('search ' + r.status);
   return (await r.json()).filter(f => f.properties.type === 'run' && f.properties.uses.includes('downhill') &&
-    ['LineString', 'Polygon'].includes(f.geometry.type) && inBreck(f));
+    ['LineString', 'Polygon'].includes(f.geometry.type) && inArea(f, area));
 }
 
 // Join segments end-to-start into the longest continuous line, for the elevation profile
@@ -92,7 +93,7 @@ function summarize(features) {
   };
 }
 
-async function buildRuns(names) {
+async function buildRuns(names, area = BRECK) {
   const runs = {}, unmatched = [];
   for (const name of names) {
     const base = ALIASES[name] || name;
@@ -100,8 +101,9 @@ async function buildRuns(names) {
     let hits = [];
     // Try progressively looser queries until one returns this run
     const loose = norm(base);
-    for (const q of [base + ' Breckenridge', loose + ' Breckenridge', base.replace(/’/g, "'"), loose]) {
-      hits = (await searchRuns(q)).filter(f => norm(f.properties.name || '') === target);
+    const isMatch = n => norm(n) === target || (area.sections && norm(n.split(' - ')[0]) === target && n.includes(' - '));
+    for (const q of [base + ' ' + area.name, loose + ' ' + area.name, base.replace(/’/g, "'"), loose]) {
+      hits = (await searchRuns(q, area)).filter(f => isMatch(f.properties.name || ''));
       await sleep(120);
       if (hits.length) break;
     }

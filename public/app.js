@@ -138,7 +138,11 @@ async function getWeather() {
 }
 
 (async function main() {
-  const data = await fetch('data/breck.json').then(r => r.json());
+  const [data, VAIL] = await Promise.all([
+    fetch('data/breck.json').then(r => r.json()),
+    // Signature Vail runs for the "Compared to Vail" section (built by tools/build_vail.mjs); optional
+    fetch('data/vail.json').then(r => r.json()).then(d => d.runs).catch(() => ({})),
+  ]);
   const { width: W, height: H, labels, runs } = data;
 
   // One entry per run name (a name can be printed in several places on the map)
@@ -348,6 +352,7 @@ async function getWeather() {
         if (tags.length) html += `<ul class="tags">${tags.map(t => `<li>${t}</li>`).join('')}</ul>`;
         if (run.description) html += `<p>${esc(run.description)}</p>`;
         html += profileSvg(run.profile);
+        html += vailSection(name);
       } else {
         html += `<p class="empty">OpenSkiMap doesn’t have details for this run yet. Its color on the trail map shows the official difficulty.</p>`;
       }
@@ -611,6 +616,112 @@ async function getWeather() {
       <p class="source">Each line is the longest continuous stretch OpenSkiMap has for that run, so it can be shorter than the run’s full length.</p></div>`;
   }
 
+  // ---------- Compared to Vail ----------
+  // Every rated Breck run gets a Vail run of the same difficulty to compare against: picked automatically
+  // (closest in average slope and length, favoring the famous ones), or chosen by the user.
+  const vailPick = {}; // Breck run name -> Vail run name the user chose
+  const vailLevel = name => diffOf(VAIL[name]).level;
+  function defaultVail(r) {
+    const run = r.run;
+    const score = ([n, v]) => {
+      let s = v.note ? -0.4 : 0; // a run they'll recognize beats a slightly closer match
+      if (run.avgGradePct != null && v.avgGradePct != null) s += Math.abs(run.avgGradePct - v.avgGradePct) / 6;
+      if (run.lengthM && v.lengthM) s += Math.abs(Math.log(run.lengthM / v.lengthM));
+      else if (run.verticalM && v.verticalM) s += Math.abs(Math.log(run.verticalM / v.verticalM));
+      return s;
+    };
+    const same = Object.entries(VAIL).filter(([n]) => vailLevel(n) === r.level);
+    return same.sort((a, b) => score(a) - score(b))[0]?.[0] || null;
+  }
+
+  function vailSection(name) {
+    const r = RUNS[name];
+    if (!r.run || !r.level || !Object.keys(VAIL).length) return '';
+    const vName = vailPick[name] || defaultVail(r);
+    if (!vName) return '';
+    const b = r.run, v = VAIL[vName], vd = diffOf(v);
+    const options = Object.entries(LEVELS).map(([k, lv]) => {
+      const names = Object.keys(VAIL).filter(n => vailLevel(n) === k).sort((x, y) => x.localeCompare(y));
+      return names.length ? `<optgroup label="${lv.sign}">${names.map(n => `<option ${n === vName ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '';
+    }).join('');
+    const cell = (x, f) => (x ? f(x) : '—');
+    const rows = [
+      ['Difficulty', diffOf(b).label, vd.label],
+      ['Length', cell(b.lengthM, fmtLen), cell(v.lengthM, fmtLen)],
+      ['Vertical drop', cell(b.verticalM, fmtFt), cell(v.verticalM, fmtFt)],
+      ['Average slope', cell(b.avgGradePct, deg), cell(v.avgGradePct, deg)],
+      ['Steepest pitch', cell(b.maxGradePct, deg), cell(v.maxGradePct, deg)],
+      ['Top elevation', cell(b.topM, fmtFt), cell(v.topM, fmtFt)],
+    ];
+    const notes = vailCommentary(name, b, vName, v);
+    return `<section class="vail">
+      <h3>Compared to Vail</h3>
+      <label class="vail-pick"><span>Compare with</span>
+        <select data-vail="${esc(name)}" aria-label="Vail run to compare with">${options}</select></label>
+      <p class="vail-headline">${notes.headline}</p>
+      <table class="cmp-table vail-table">
+        <thead><tr><th></th>
+          <th scope="col"><span class="swatch" style="background:${CMP_COLORS[0]}"></span>${esc(name)}</th>
+          <th scope="col"><span class="swatch" style="background:${CMP_COLORS[1]}"></span>${esc(vName)} <span class="sub">(Vail)</span></th></tr></thead>
+        <tbody>${rows.map(([k, x, y]) => `<tr><th scope="row">${k}</th><td>${x}</td><td>${y}</td></tr>`).join('')}</tbody></table>
+      <ul class="vail-notes">${notes.points.map(p => `<li>${p}</li>`).join('')}</ul>
+      ${compareProfiles([{ run: b }, { run: v }])}
+    </section>`;
+  }
+
+  // Plain-English comparison, written from the stats (no hand-written text per run pair)
+  function vailCommentary(bName, b, vName, v) {
+    const B = esc(bName), V = esc(vName), points = [];
+    const slope = p => Math.atan(p / 100) * 180 / Math.PI;
+    const dSlope = b.avgGradePct != null && v.avgGradePct != null ? slope(b.avgGradePct) - slope(v.avgGradePct) : null;
+    const lenRatio = b.lengthM && v.lengthM ? b.lengthM / v.lengthM : null;
+    const pct = x => Math.round(Math.abs(x - 1) * 100);
+
+    // One-line takeaway: "a steeper, shorter Riva Ridge"
+    const traits = [];
+    if (dSlope !== null && dSlope >= 2.5) traits.push('steeper');
+    if (dSlope !== null && dSlope <= -2.5) traits.push('gentler');
+    if (lenRatio && lenRatio >= 1.15) traits.push('longer');
+    if (lenRatio && lenRatio <= 0.87) traits.push('shorter');
+    let headline = traits.length
+      ? `Think of it as a ${traits.join(', ')} ${V}.`
+      : `Skis a lot like ${V}${lenRatio ? ': similar length and pitch' : ''}.`;
+    if (v.note) headline += ` <span class="sub">(${V} is ${esc(v.note)}.)</span>`;
+    if (b.isArea) headline = `It’s an open bowl, not a trail, so there’s no set line to compare with ${V}: you choose how steep to ski it.` +
+      (v.note ? ` <span class="sub">(${V} is ${esc(v.note)}.)</span>` : '');
+
+    if (lenRatio && b.verticalM && v.verticalM) {
+      const len = lenRatio < 1.15 && lenRatio > 0.87 ? `about the same length as ${V}` : `${pct(lenRatio)}% ${lenRatio > 1 ? 'longer' : 'shorter'} than ${V}`;
+      const dv = (b.verticalM - v.verticalM) * FT;
+      const vert = Math.abs(dv) < 100 ? 'about the same vertical' : `${Math.round(Math.abs(dv)).toLocaleString()} ft ${dv > 0 ? 'more' : 'less'} vertical`;
+      points.push(`At ${fmtLen(b.lengthM)}, it’s ${len}, with ${vert}.`);
+    } else if (b.verticalM && v.verticalM) {
+      points.push(`It drops ${fmtFt(b.verticalM)} top to bottom, compared with ${fmtFt(v.verticalM)} on ${V}.`);
+    }
+    if (dSlope !== null) {
+      const feel = Math.abs(dSlope) < 2.5 ? 'about the same overall pitch' : dSlope > 0 ? 'noticeably steeper overall' : 'noticeably gentler overall';
+      points.push(`Average slope is ${Math.round(slope(b.avgGradePct))}° vs ${Math.round(slope(v.avgGradePct))}°: ${feel}.`);
+    }
+    if (b.maxGradePct && v.maxGradePct) {
+      const dMax = slope(b.maxGradePct) - slope(v.maxGradePct);
+      points.push(Math.abs(dMax) < 3
+        ? `Its steepest pitch (${Math.round(slope(b.maxGradePct))}°) is about as steep as the steepest part of ${V}.`
+        : `Its steepest pitch is ${Math.round(slope(b.maxGradePct))}° vs ${Math.round(slope(v.maxGradePct))}° on ${V}, so the hardest part is ${dMax > 0 ? 'tougher' : 'easier'}.`);
+    }
+    // The big Breck vs Vail difference: altitude
+    if (b.topM && v.topM) {
+      const dTop = (b.topM - v.topM) * FT;
+      if (dTop > 400) points.push(`It starts ${(Math.round(dTop / 100) * 100).toLocaleString()} ft higher than ${V} (${fmtFt(b.topM)}). The air is thinner, so expect to tire sooner on your first days.`);
+      else if (dTop < -400) points.push(`It sits ${(Math.round(-dTop / 100) * 100).toLocaleString()} ft lower than ${V}.`);
+    }
+    const bt = tagsOf(b), vt = tagsOf(v);
+    if (bt.includes('Moguls') && !vt.includes('Moguls')) points.push(`OpenSkiMap lists it as a mogul run, unlike ${V}.`);
+    if (bt.includes('Gladed / trees') && !vt.includes('Gladed / trees')) points.push('It’s gladed: expect to ski through trees.');
+    if (bt.includes('Groomed') && vt.includes('Moguls')) points.push(`It’s groomed, so smoother than ${V}’s bumps.`);
+    if (diffOf(v).level !== diffOf(b).level) points.push(`Heads up: ${V} is rated ${diffOf(v).label}, this run is ${diffOf(b).label}.`);
+    return { headline, points };
+  }
+
   // ---------- Sharing ----------
   // Links point at run/<slug>/, a small page with a preview card (built by tools/make-share-pages.html)
   // that forwards to #run/<slug>.
@@ -668,6 +779,8 @@ async function getWeather() {
   body.addEventListener('change', e => {
     const k = e.target.dataset.setList;
     if (k) { listState[k] = e.target.value; keepScroll(() => VIEWS.list()); }
+    const breckRun = e.target.dataset.vail;
+    if (breckRun) { vailPick[breckRun] = e.target.value; keepScroll(() => VIEWS.run({ name: breckRun })); }
   });
   const keepScroll = fn => { const y = panel.scrollTop; fn(); panel.scrollTop = y; };
 

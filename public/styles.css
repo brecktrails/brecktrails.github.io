@@ -317,6 +317,17 @@ select {
 .cmp-table tbody th { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
 .cmp-table td.best { font-weight: 750; }
 
+/* Compared to Vail */
+.vail { margin: 4px 0 18px; padding: 14px; border-radius: 14px; border: 1px solid var(--border); }
+.vail h3 { margin-top: 0; }
+.vail-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 14px; }
+.vail-pick select { flex: 1; min-width: 0; }
+.vail-headline { margin: 0 0 10px; font-size: 16px; font-weight: 650; line-height: 1.4; }
+.vail-headline .sub { display: block; font-weight: 400; font-size: 13px; margin-top: 2px; }
+.vail-table { margin-bottom: 10px; }
+.vail-notes { margin: 0 0 6px; padding-left: 18px; font-size: 14px; line-height: 1.45; }
+.vail-notes li { margin-bottom: 6px; }
+
 /* Weather */
 .wx-chip { font-size: 14px; font-weight: 700; }
 .wx-spots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 12px; }
