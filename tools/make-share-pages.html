@@ -1,0 +1,131 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>make share pages</title></head><body>
+<canvas id="c"></canvas>
+<script>
+// Build tool, served by tools/serve.ps1. For every run it writes:
+//   public/run/<slug>/index.html  - tiny page with preview-card tags that forwards to #run/<slug>
+//   public/run/<slug>/card.jpg    - the preview image: that part of the trail map with the run highlighted
+// plus public/og-image.jpg for the home page. Run makeAll() in the console after the data or map changes.
+const SITE = 'https://brecktrails.github.io/';
+const W = 1200, H = 630, SCALE = 3; // trailmap.jpg is rendered at 3 px per PDF point
+const FT = 3.28084;
+const save = (path, body) => fetch('/__save/' + path, { method: 'PUT', body });
+const norm = s => s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const slugOf = name => norm(name).replace(/ /g, '-');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtFt = m => Math.round(m * FT).toLocaleString() + ' ft';
+const fmtLen = m => m * FT >= 5280 ? (m * FT / 5280).toFixed(1) + ' mi' : fmtFt(m);
+// Same difficulty names and peak boundaries as public/app.js
+const DIFF = { novice: ['Easiest', '#1f9d55', 'circle'], easy: ['Easiest', '#1f9d55', 'circle'], intermediate: ['More Difficult', '#1565c0', 'square'],
+  advanced: ['Most Difficult', '#111', 'diamond'], expert: ['Expert', '#111', 'double'], extreme: ['Extreme', '#111', 'double'], freeride: ['Freeride', '#111', 'double'] };
+const PEAK_OVERRIDES = { 'Upper Lehman': 9, 'Whale’s Tail': 8, 'Easiest Way to Peak 9': 8 };
+const peakOf = l => PEAK_OVERRIDES[l.name] || (l.x < 225 && l.y < 620 ? 10 : l.x < 470 ? 9 : l.x < 850 ? 8 : l.x < 1075 ? 7 : 6);
+
+// Corners of the rotated box around a line of text, in PDF points (same geometry as the app's hotspots)
+function textBox(x, y, w, h, rotDeg, pad = 2) {
+  const r = rotDeg * Math.PI / 180, d = [Math.cos(r), -Math.sin(r)], u = [-Math.sin(r), -Math.cos(r)];
+  const pt = (a, b) => [x + a * d[0] + b * u[0], y + a * d[1] + b * u[1]];
+  return [pt(-pad - h * 1.2, -0.3 * h - pad), pt(w + pad, -0.3 * h - pad), pt(w + pad, h + pad), pt(-pad - h * 1.2, h + pad)];
+}
+function labelBoxes(l) {
+  if (l.pts) return l.pts.map((p, i) => {
+    const q = l.pts[i + 1] || [2 * p[0] - l.pts[i - 1][0], 2 * p[1] - l.pts[i - 1][1]];
+    return textBox(p[0], p[1], Math.hypot(q[0] - p[0], q[1] - p[1]), l.h, -Math.atan2(q[1] - p[1], q[0] - p[0]) * 180 / Math.PI, 1.5);
+  });
+  const boxes = [textBox(l.x, l.y, l.w, l.h, l.rot)];
+  if (l.lines === 2) boxes.push(textBox(l.x2, l.y2, l.w2, l.h, l.rot));
+  return boxes;
+}
+
+function signIcon(ctx, kind, color, x, y, s) {
+  ctx.fillStyle = color;
+  const diamond = (cx, cy, r) => { ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy); ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy); ctx.fill(); };
+  if (kind === 'circle') { ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s / 2, 0, 7); ctx.fill(); }
+  if (kind === 'square') ctx.fillRect(x + s * .08, y + s * .08, s * .84, s * .84);
+  if (kind === 'diamond') diamond(x + s / 2, y + s / 2, s / 2);
+  if (kind === 'double') { diamond(x + s * .26, y + s / 2, s * .3); diamond(x + s * .74, y + s / 2, s * .3); }
+}
+// Bottom band: logo, title, subtitle, site name
+function drawBand(ctx, logo, title, sub, icon) {
+  const g = ctx.createLinearGradient(0, H - 240, 0, H);
+  g.addColorStop(0, 'rgba(8,22,40,0)'); g.addColorStop(.35, 'rgba(8,22,40,.86)'); g.addColorStop(1, 'rgba(8,22,40,.96)');
+  ctx.fillStyle = g; ctx.fillRect(0, H - 240, W, 240);
+  let x = 56;
+  if (icon) {
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(x - 8, H - 150, 64, 64, 14); ctx.fill();
+    signIcon(ctx, icon[2], icon[1], x + 4, H - 138, 40); x += 82;
+  }
+  ctx.fillStyle = '#fff'; ctx.font = '700 64px system-ui, "Segoe UI", sans-serif';
+  ctx.fillText(title, x, H - 96, W - x - 56);
+  ctx.font = '500 30px system-ui, "Segoe UI", sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.88)';
+  ctx.fillText(sub, x, H - 50, W - x - 56);
+  ctx.drawImage(logo, W - 56 - 44, 30, 44, 44);
+  ctx.font = '650 24px system-ui, "Segoe UI", sans-serif'; ctx.fillStyle = '#fff';
+  ctx.textAlign = 'right'; ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 8;
+  ctx.fillText('brecktrails.github.io', W - 56 - 56, 60); ctx.textAlign = 'left'; ctx.shadowBlur = 0;
+}
+
+const load = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+const toJpeg = cv => new Promise(r => cv.toBlob(r, 'image/jpeg', 0.74));
+
+function pageHtml(name, slug, desc) {
+  const t = esc(name);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>${t} · Breck Trail Explorer</title>
+<meta name="description" content="${esc(desc)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Breck Trail Explorer">
+<meta property="og:title" content="${t} · Breckenridge">
+<meta property="og:description" content="${esc(desc)}">
+<meta property="og:url" content="${SITE}run/${slug}/">
+<meta property="og:image" content="${SITE}run/${slug}/card.jpg">
+<meta property="og:image:width" content="${W}">
+<meta property="og:image:height" content="${H}">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../icons/logo.svg" type="image/svg+xml">
+<meta http-equiv="refresh" content="0; url=../../#run/${slug}">
+<script>location.replace('../../#run/${slug}');<\/script>
+</head><body><p><a href="../../#run/${slug}">Open ${t} on Breck Trail Explorer</a></p></body></html>
+`;
+}
+
+window.makeAll = async () => {
+  const data = await (await fetch('/public/data/breck.json')).json();
+  const [map, logo] = await Promise.all([load('/public/trailmap.jpg'), load('/public/icons/logo.svg')]);
+  const cv = document.getElementById('c'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+
+  // Home page card: the whole mountain
+  ctx.drawImage(map, 0, 110 * SCALE, data.width * SCALE, (data.width * H / W) * SCALE, 0, 0, W, H);
+  drawBand(ctx, logo, 'Breck Trail Explorer', 'Tap any run on the Breckenridge trail map for stats, ideas and videos');
+  await save('public/og-image.jpg', await toJpeg(cv));
+
+  const byName = {};
+  for (const l of data.labels) (byName[l.name] ||= []).push(l);
+  let n = 0;
+  for (const [name, labels] of Object.entries(byName)) {
+    const slug = slugOf(name), l = labels[0], run = data.runs[name];
+    // 400 x 210 point window around the label, a bit above center so the band doesn't cover it
+    const cx = l.x + l.w / 2, cy = l.y;
+    const vw = 400, vh = vw * H / W;
+    const x0 = Math.max(0, Math.min(data.width - vw, cx - vw / 2)), y0 = Math.max(0, Math.min(data.height - vh, cy - vh * 0.4));
+    const k = W / vw;
+    ctx.drawImage(map, x0 * SCALE, y0 * SCALE, vw * SCALE, vh * SCALE, 0, 0, W, H);
+    ctx.lineWidth = 5; ctx.strokeStyle = '#e0a800'; ctx.fillStyle = 'rgba(255, 212, 0, .45)';
+    for (const lab of labels) for (const box of labelBoxes(lab)) {
+      ctx.beginPath(); box.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo']((x - x0) * k, (y - y0) * k)); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    const d = DIFF[run?.difficulty];
+    const bits = [d ? d[0] : null, 'Peak ' + peakOf(l), run?.lengthM ? fmtLen(run.lengthM) : null, run?.verticalM ? fmtFt(run.verticalM) + ' drop' : null].filter(Boolean);
+    const desc = bits.join(' · ');
+    drawBand(ctx, logo, name, desc, d);
+    await save(`public/run/${slug}/card.jpg`, await toJpeg(cv));
+    await save(`public/run/${slug}/index.html`, pageHtml(name, slug, desc + ' — tap to see it on the trail map.'));
+    n++;
+  }
+  return n + ' run pages';
+};
+</script>
+</body></html>

@@ -187,6 +187,20 @@ svg { flex: none; }
 .panel p { line-height: 1.5; }
 .intro { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
 
+.run-head { display: flex; align-items: flex-start; gap: 10px; }
+.run-head h2 { flex: 1; min-width: 0; }
+.share {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; height: 34px; margin-top: 2px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.share svg { width: 16px; height: 16px; color: var(--accent); }
+.share:hover { background: var(--bg); }
+.toast {
+  position: fixed; z-index: 2000; left: 50%; bottom: 28px; transform: translateX(-50%);
+  padding: 12px 18px; border-radius: 12px; background: var(--navy); color: #fff;
+  font-size: 14px; font-weight: 600; box-shadow: var(--shadow); white-space: nowrap;
+}
 .diff { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .diff svg, .icon svg { width: 20px; height: 20px; }
 .icon { display: inline-grid; place-items: center; }
@@ -276,6 +290,51 @@ select {
 .peak .mix svg { width: 14px; height: 14px; }
 .peak .btns { display: flex; gap: 8px; }
 .peak .btns .btn { flex: 1; }
+
+/* Compare */
+.badge {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+}
+.cmp-toggle {
+  display: block; margin: 10px 0 4px; padding: 7px 12px; border: 1px dashed var(--accent); border-radius: 999px;
+  background: transparent; color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.cmp-toggle[aria-pressed="true"] { border-style: solid; background: var(--accent-soft); }
+.cmp-runs { list-style: none; margin: 8px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cmp-runs li { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--bg); }
+.cmp-runs .link { flex: 1; border: 0; background: none; padding: 0; text-align: left; font-weight: 650; font-size: 15px; cursor: pointer; }
+.icon-btn.sm { width: 30px; height: 30px; font-size: 18px; background: var(--surface); }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.profile .cmp-chart { width: 100%; height: auto; display: block; }
+.cmp-chart .grid { stroke: var(--border); stroke-width: 1; }
+.cmp-chart .axis { font-size: 9px; fill: var(--muted); }
+.cmp-table-wrap { overflow-x: auto; margin: 0 -4px; }
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cmp-table th, .cmp-table td { padding: 8px 6px; border-top: 1px solid var(--border); text-align: left; vertical-align: top; }
+.cmp-table thead th { border-top: 0; font-size: 13px; }
+.cmp-table thead .swatch { margin-right: 5px; vertical-align: -1px; }
+.cmp-table tbody th { color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; }
+.cmp-table td.best { font-weight: 750; }
+
+/* Weather */
+.wx-chip { font-size: 14px; font-weight: 700; }
+.wx-spots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 12px; }
+.wx-spot { padding: 12px; border-radius: 12px; background: var(--bg); }
+.wx-name { font-weight: 700; font-size: 16px; }
+.wx-spot .sub { font-size: 12px; }
+.wx-now { display: flex; align-items: center; gap: 6px; margin: 8px 0 2px; }
+.wx-icon { font-size: 30px; line-height: 1; }
+.wx-temp { font-size: 36px; font-weight: 750; line-height: 1; }
+.wx-cond { font-weight: 600; margin-bottom: 4px; }
+.wx-alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 0 0 8px; border-radius: 12px; background: var(--accent-soft); }
+.wx-alert > span { font-size: 22px; line-height: 1.2; }
+.wx-alert strong { display: block; }
+.wx-alert div span { font-size: 13px; color: var(--muted); }
+.wx-days { list-style: none; margin: 0; padding: 0; }
+.wx-days li { display: grid; grid-template-columns: 56px 28px 1fr auto; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 15px; }
+.wx-day { font-weight: 600; }
+.wx-snow { font-size: 14px; text-align: right; }
 
 /* Tips */
 .tips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }

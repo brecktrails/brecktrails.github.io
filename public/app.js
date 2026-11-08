@@ -13,6 +13,9 @@ const norm = s => s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, 
 const fmtFt = m => Math.round(m * FT).toLocaleString() + ' ft';
 const fmtLen = m => m * FT >= 5280 ? (m * FT / 5280).toFixed(1) + ' mi' : fmtFt(m);
 const deg = pct => Math.round(Math.atan(pct / 100) * 180 / Math.PI) + '°';
+// "Lower 4 O’Clock" -> "lower-4-oclock": used in share links and the run/<slug>/ preview pages
+const slugOf = name => norm(name).replace(/ /g, '-');
+const SITE_URL = 'https://brecktrails.github.io/';
 
 // ---------- Difficulty ----------
 // OpenSkiMap difficulty -> North American trail sign. `level` groups them for filters.
@@ -96,6 +99,44 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   });
 })();
 
+// ---------- Weather ----------
+// Forecast from Open-Meteo (free, no account) for two spots: the Peak 8 base and the top of the
+// Imperial SuperChair. Open-Meteo adjusts temperatures to the elevation we pass in.
+const WX_SPOTS = [
+  { name: 'Base', sub: 'Peak 8 base · 9,600 ft', lat: 39.4808, lon: -106.0666, elev: 2926 },
+  { name: 'Summit', sub: 'Top of Imperial · 12,840 ft', lat: 39.4757, lon: -106.0961, elev: 3914 },
+];
+const WX_URL = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
+  latitude: WX_SPOTS.map(s => s.lat).join(','), longitude: WX_SPOTS.map(s => s.lon).join(','),
+  elevation: WX_SPOTS.map(s => s.elev).join(','),
+  current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,is_day',
+  daily: 'weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,wind_gusts_10m_max',
+  temperature_unit: 'fahrenheit', wind_speed_unit: 'mph', precipitation_unit: 'inch',
+  timezone: 'America/Denver', forecast_days: 5,
+});
+// WMO weather codes -> [label, emoji]
+function wxCode(code, day = 1) {
+  if (code === 0) return ['Clear', day ? '☀️' : '🌙'];
+  if (code <= 2) return ['Partly cloudy', day ? '🌤️' : '☁️'];
+  if (code === 3) return ['Cloudy', '☁️'];
+  if (code <= 48) return ['Fog', '🌫️'];
+  if (code <= 57) return ['Drizzle', '🌦️'];
+  if (code <= 67) return ['Rain', '🌧️'];
+  if (code <= 77) return ['Snow', '🌨️'];
+  if (code <= 82) return ['Rain showers', '🌦️'];
+  if (code <= 86) return ['Snow showers', '❄️'];
+  return ['Thunderstorms', '⛈️'];
+}
+let wxCache = null; // { at, data } so reopening the panel doesn't refetch every time
+async function getWeather() {
+  if (wxCache && Date.now() - wxCache.at < 15 * 60e3) return wxCache.data;
+  const res = await fetch(WX_URL);
+  if (!res.ok) throw new Error('weather ' + res.status);
+  const data = await res.json();
+  wxCache = { at: Date.now(), data };
+  return data;
+}
+
 (async function main() {
   const data = await fetch('data/breck.json').then(r => r.json());
   const { width: W, height: H, labels, runs } = data;
@@ -112,16 +153,22 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   $('official-link').href = OFFICIAL_PDF;
 
   // ---------- Landing <-> map routing ----------
+  // #map shows the map; #run/<slug> shows the map with that run open (what share links point to)
+  const BY_SLUG = Object.fromEntries(ALL.map(r => [slugOf(r.name), r.name]));
   let mapReady = false;
   function route() {
-    const showMap = location.hash === '#map';
+    const runName = BY_SLUG[decodeURIComponent(location.hash.match(/^#run\/(.+)$/)?.[1] || '')];
+    const showMap = location.hash === '#map' || !!runName;
     $('landing').hidden = showMap;
     $('app').hidden = !showMap;
     document.body.style.overflow = showMap ? 'hidden' : '';
     if (showMap && !mapReady) { initMap(); mapReady = true; }
     else if (showMap) map.invalidateSize();
+    if (runName && selected !== runName) { showView({ type: 'run', name: runName }); flyToRun(runName); }
   }
   window.addEventListener('hashchange', route);
+  // Keep the address bar pointing at what's on screen, without adding history entries
+  const setHash = h => { if (location.hash !== h) history.replaceState(null, '', h); };
 
   // ---------- Map ----------
   let map;
@@ -255,6 +302,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
     panel.scrollTop = view.scroll || 0;
     document.querySelectorAll('.tool[data-open]').forEach(b => b.setAttribute('aria-current', b.dataset.open === view.type));
     highlightRun(view.type === 'run' ? view.name : null);
+    setHash(view.type === 'run' ? '#run/' + slugOf(view.name) : '#map');
   }
   function back() {
     stack.pop();
@@ -266,6 +314,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
     document.body.classList.remove('panel-open');
     highlightRun(null);
     document.querySelectorAll('.tool[data-open]').forEach(b => b.setAttribute('aria-current', 'false'));
+    setHash('#map');
   }
   // Remember scroll position of the view we're leaving, so Back returns to the same spot
   const saveScroll = () => { if (stack.length) stack[stack.length - 1].scroll = panel.scrollTop; };
@@ -279,8 +328,12 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
     run({ name }) {
       const r = RUNS[name], run = r.run, d = diffOf(run);
       const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent('breckenridge ' + name.replace(/’/g, "'"));
-      let html = `<h2>${esc(name)}</h2>
-        <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· Peak ${r.peak}</span></div>`;
+      let html = `<div class="run-head"><h2>${esc(name)}</h2>
+          <button class="share" data-share="${esc(name)}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Share</button></div>
+        <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· Peak ${r.peak}</span></div>
+        ${compareButton(name)}`;
       if (run) {
         html += `<p class="diff-note">Rating from OpenSkiMap. The run’s color on the trail map is the resort’s official rating.</p>`;
         const stats = [];
@@ -365,6 +418,81 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
         <p class="source">Peak groupings are based on where each run sits on the trail map.</p>`;
     },
 
+    weather() {
+      body.innerHTML = `<h2>Mountain weather</h2><p class="intro">Loading the latest forecast…</p>`;
+      getWeather().then(([base, top]) => {
+        if (stack[stack.length - 1]?.type !== 'weather') return; // panel moved on while loading
+        const spot = (s, w) => {
+          const [label, icon] = wxCode(w.current.weather_code, w.current.is_day);
+          return `<div class="wx-spot"><div class="wx-name">${s.name}</div><div class="sub">${s.sub}</div>
+            <div class="wx-now"><span class="wx-icon">${icon}</span><span class="wx-temp">${Math.round(w.current.temperature_2m)}°</span></div>
+            <div class="wx-cond">${label}</div>
+            <div class="sub">Feels like ${Math.round(w.current.apparent_temperature)}°</div>
+            <div class="sub">Wind ${Math.round(w.current.wind_speed_10m)} mph, gusts ${Math.round(w.current.wind_gusts_10m)}</div></div>`;
+        };
+        // Callouts a first-timer would want to know about
+        const alerts = [];
+        if (top.current.wind_gusts_10m >= 40) alerts.push(['💨', 'Strong winds up top', 'Upper lifts like Imperial and the T-bar may be on wind hold.']);
+        const snow24 = top.daily.snowfall_sum[0] + top.daily.snowfall_sum[1];
+        if (snow24 >= 3) alerts.push(['❄️', 'Fresh snow coming', `About ${snow24.toFixed(0)}" forecast up top today and tomorrow.`]);
+        if (top.current.apparent_temperature <= 0) alerts.push(['🥶', 'Bitter cold up top', 'Cover all skin; frostbite can happen fast in wind.']);
+        const days = top.daily.time.map((t, i) => {
+          const [label, icon] = wxCode(base.daily.weather_code[i]);
+          const day = i === 0 ? 'Today' : new Date(t + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
+          const snow = top.daily.snowfall_sum[i];
+          return `<li><span class="wx-day">${day}</span><span title="${label}">${icon}</span>
+            <span class="wx-hilo">${Math.round(base.daily.temperature_2m_max[i])}° <span class="sub">/ ${Math.round(base.daily.temperature_2m_min[i])}°</span></span>
+            <span class="wx-snow">${snow >= 0.1 ? '❄️ ' + snow.toFixed(1) + '"' : '<span class="sub">no snow</span>'}</span></li>`;
+        }).join('');
+        const updated = new Date(wxCache.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        body.innerHTML = `<h2>Mountain weather</h2><p class="intro">Updated ${updated}</p>
+          <div class="wx-spots">${spot(WX_SPOTS[0], base)}${spot(WX_SPOTS[1], top)}</div>
+          ${alerts.map(([i, t, d]) => `<div class="wx-alert"><span>${i}</span><div><strong>${t}</strong><span>${d}</span></div></div>`).join('')}
+          <h3>Next 5 days</h3>
+          <ul class="wx-days">${days}</ul>
+          <p class="source">Temperatures for the base; snow for the summit. Forecast by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>, modeled for these elevations, not live station readings. Check the resort for lift and wind holds.</p>`;
+      }).catch(() => {
+        if (stack[stack.length - 1]?.type !== 'weather') return;
+        body.innerHTML = `<h2>Mountain weather</h2><p class="empty">Couldn’t load the forecast. Check your connection and try again.</p>`;
+      });
+    },
+
+    compare() {
+      if (compareList.length < 2) {
+        body.innerHTML = `<h2>Compare runs</h2>
+          <p class="intro">See up to ${MAX_COMPARE} runs side by side: stats and elevation profiles on one chart.</p>
+          ${compareList.length ? `<ul class="cmp-runs">${compareList.map(cmpChip).join('')}</ul>` : ''}
+          <p class="empty">Open any run (tap it on the map, or use search or All runs) and tap <strong>Add to compare</strong>. ${compareList.length ? 'Pick one more.' : 'Pick at least two.'}</p>`;
+        return;
+      }
+      const rs = compareList.map(n => RUNS[n]);
+      // Each row: label, value per run, and which way is "most" (to bold the standout)
+      const rows = [
+        ['Difficulty', r => diffOf(r.run).label],
+        ['Peak', r => 'Peak ' + r.peak],
+        ['Length', r => r.run?.lengthM ? fmtLen(r.run.lengthM) : '—', r => r.run?.lengthM],
+        ['Vertical drop', r => r.run?.verticalM ? fmtFt(r.run.verticalM) : '—', r => r.run?.verticalM],
+        ['Top', r => r.run?.topM ? fmtFt(r.run.topM) : '—', r => r.run?.topM],
+        ['Bottom', r => r.run?.bottomM ? fmtFt(r.run.bottomM) : '—'],
+        ['Avg grade', r => r.run?.avgGradePct ? `${r.run.avgGradePct}% (${deg(r.run.avgGradePct)})` : '—', r => r.run?.avgGradePct],
+        ['Steepest', r => r.run?.maxGradePct ? `${r.run.maxGradePct}% (${deg(r.run.maxGradePct)})` : '—', r => r.run?.maxGradePct],
+        ['Surface', r => (r.run ? tagsOf(r.run).filter(t => t !== 'Snowmaking').join(', ') : '') || '—'],
+      ];
+      const table = rows.map(([label, val, num]) => {
+        const nums = num ? rs.map(r => num(r) ?? -Infinity) : null;
+        const best = nums && Math.max(...nums) > -Infinity ? Math.max(...nums) : null;
+        return `<tr><th scope="row">${label}</th>${rs.map((r, i) =>
+          `<td class="${best !== null && nums[i] === best && rs.length > 1 ? 'best' : ''}">${val(r)}</td>`).join('')}</tr>`;
+      }).join('');
+      body.innerHTML = `<h2>Compare runs</h2>
+        <ul class="cmp-runs">${compareList.map(cmpChip).join('')}</ul>
+        ${compareProfiles(rs)}
+        <div class="cmp-table-wrap"><table class="cmp-table">
+          <thead><tr><th></th>${rs.map((r, i) => `<th scope="col"><span class="swatch" style="background:${CMP_COLORS[i]}"></span>${esc(r.name)}</th>`).join('')}</tr></thead>
+          <tbody>${table}</tbody></table></div>
+        <p class="source">Bold = the most of that stat. Stats from OpenSkiMap.</p>`;
+    },
+
     tips() {
       body.innerHTML = `<h2>First-timer tips</h2>
         <ul class="tips">${TIPS.map(([t, d]) => `<li><strong>${t}</strong><span>${d}</span></li>`).join('')}</ul>
@@ -441,11 +569,79 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
       .sort((a, b) => sort.asc ? a.name.localeCompare(b.name) : sort.key(b) - sort.key(a) || a.name.localeCompare(b.name));
   }
 
+  // ---------- Compare runs ----------
+  const MAX_COMPARE = 3;
+  const CMP_COLORS = ['#0b63ce', '#e8590c', '#2b8a3e'];
+  let compareList = [];
+  function compareButton(name) {
+    const on = compareList.includes(name);
+    return `<button class="cmp-toggle" data-compare="${esc(name)}" aria-pressed="${on}">${on ? '✓ In compare' : '+ Add to compare'}</button>`;
+  }
+  function toggleCompare(name) {
+    if (compareList.includes(name)) compareList = compareList.filter(n => n !== name);
+    else if (compareList.length >= MAX_COMPARE) return toast(`You can compare up to ${MAX_COMPARE} runs`);
+    else {
+      compareList.push(name);
+      if (compareList.length >= 2) toast(`${compareList.length} runs ready: tap Compare`);
+    }
+    $('cmp-count').textContent = compareList.length;
+    $('cmp-count').hidden = !compareList.length;
+  }
+  const cmpChip = (n, i) => `<li><span class="swatch" style="background:${CMP_COLORS[i]}"></span>
+    <button class="link" data-run="${esc(n)}">${esc(n)}</button>
+    <button class="icon-btn sm" data-uncompare="${esc(n)}" aria-label="Remove ${esc(n)}">×</button></li>`;
+  // Elevation profiles on one chart, in real feet, so you can see which run is longer, higher and steeper
+  function compareProfiles(rs) {
+    const withProfile = rs.map((r, i) => ({ r, i, p: r.run?.profile })).filter(x => x.p && x.p.length > 2);
+    if (!withProfile.length) return '';
+    const maxD = Math.max(...withProfile.map(x => x.p[x.p.length - 1][0]));
+    const els = withProfile.flatMap(x => x.p.map(q => q[1]));
+    const lo = Math.min(...els), hi = Math.max(...els), span = Math.max(hi - lo, 1);
+    const X = d => 40 + d / maxD * 250, Y = e => 10 + (1 - (e - lo) / span) * 120;
+    const lines = withProfile.map(x => `<polyline points="${x.p.map(([d, e]) => X(d).toFixed(1) + ',' + Y(e).toFixed(1)).join(' ')}"
+      fill="none" stroke="${CMP_COLORS[x.i]}" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`).join('');
+    return `<div class="profile"><h3>Elevation profiles</h3>
+      <svg viewBox="0 0 300 150" class="cmp-chart" role="img" aria-label="Elevation profiles of the compared runs">
+        <line x1="40" y1="10" x2="290" y2="10" class="grid"/><line x1="40" y1="130" x2="290" y2="130" class="grid"/>
+        <text x="36" y="14" class="axis" text-anchor="end">${fmtFt(hi)}</text>
+        <text x="36" y="133" class="axis" text-anchor="end">${fmtFt(lo)}</text>
+        <text x="40" y="146" class="axis">0</text>
+        <text x="290" y="146" class="axis" text-anchor="end">${fmtLen(maxD)}</text>
+        ${lines}</svg>
+      <p class="source">Each line is the longest continuous stretch OpenSkiMap has for that run, so it can be shorter than the run’s full length.</p></div>`;
+  }
+
+  // ---------- Sharing ----------
+  // Links point at run/<slug>/, a small page with a preview card (built by tools/make-share-pages.html)
+  // that forwards to #run/<slug>.
+  async function shareRun(name) {
+    const r = RUNS[name], d = diffOf(r.run);
+    const url = SITE_URL + 'run/' + slugOf(name) + '/';
+    const text = `${name} at Breckenridge: ${d.label}, Peak ${r.peak}`;
+    if (navigator.share && isTouch) {
+      try { await navigator.share({ title: name, text, url }); } catch { /* closed the share sheet */ }
+      return;
+    }
+    try { await navigator.clipboard.writeText(url); toast('Link copied: paste it anywhere'); }
+    catch { prompt('Copy this link:', url); }
+  }
+  let toastTimer;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  }
+
   // ---------- Panel interactions (one delegated handler) ----------
   body.addEventListener('click', e => {
     const t = e.target.closest('button');
     if (!t) return;
     const view = stack[stack.length - 1];
+    if (t.dataset.share) return shareRun(t.dataset.share);
+    if (t.dataset.compare) { toggleCompare(t.dataset.compare); t.outerHTML = compareButton(t.dataset.compare); return; }
+    if (t.dataset.uncompare) { toggleCompare(t.dataset.uncompare); return keepScroll(() => VIEWS.compare()); }
     if (t.dataset.run) return openRun(t.dataset.run, { from: view.type });
     if (t.dataset.set) {
       suggestState[t.dataset.set] = t.dataset.val;
@@ -527,6 +723,11 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   resultsList.addEventListener('click', e => { const li = e.target.closest('li[data-name]'); if (li) choose(li.dataset.name); });
   document.addEventListener('click', e => { if (!e.target.closest('.search')) hideResults(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); hideResults(); } });
+
+  // Current conditions on the toolbar button, so the weather is visible without opening anything
+  getWeather().then(([base]) => {
+    $('wx-chip').textContent = `${wxCode(base.current.weather_code, base.current.is_day)[1]} ${Math.round(base.current.temperature_2m)}°`;
+  }).catch(() => {});
 
   route();
   window.APP = { get map() { return map; }, RUNS, openRun, showView, levelsOn }; // handy for debugging in the console
