@@ -351,7 +351,7 @@ async function getWeather() {
         const tags = tagsOf(run);
         if (tags.length) html += `<ul class="tags">${tags.map(t => `<li>${t}</li>`).join('')}</ul>`;
         if (run.description) html += `<p>${esc(run.description)}</p>`;
-        html += profileSvg(run.profile);
+        html += profileChart(run.profile);
         html += vailSection(name);
       } else {
         html += `<p class="empty">OpenSkiMap doesn’t have details for this run yet. Its color on the trail map shows the official difficulty.</p>`;
@@ -364,6 +364,7 @@ async function getWeather() {
       html += `</div>`;
       if (run) html += `<p class="source">Data © OpenStreetMap contributors, via OpenSkiMap.</p>`;
       body.innerHTML = html;
+      wireProfileCharts(body);
     },
 
     suggest() {
@@ -516,15 +517,96 @@ async function getWeather() {
     if (run.lit) tags.push('Lit at night');
     return tags;
   }
-  function profileSvg(profile) {
+  // Elevation profile in the style of OpenSkiMap's: the area under the line is colored by how steep each
+  // stretch is, with axes, and hovering (or tapping) shows elevation and slope at that point.
+  const SLOPE_BANDS = [ // max grade % for the band, color, legend label
+    [20, '#4cb85c', 'Gentle, under 11°'],
+    [35, '#4a85c4', 'Moderate, 11–19°'],
+    [55, '#3b4048', 'Steep, 19–29°'],
+    [Infinity, '#d9480f', 'Very steep, 29°+'],
+  ];
+  const bandOf = grade => SLOPE_BANDS.findIndex(([max]) => grade < max);
+  const CH = { w: 320, h: 168, l: 50, r: 312, t: 10, b: 136 }; // chart size and plot area
+  function niceStep(span, target) {
+    const raw = span / target, mag = 10 ** Math.floor(Math.log10(raw));
+    return [1, 2, 2.5, 5, 10].map(m => m * mag).find(st => st >= raw);
+  }
+  function profileChart(profile) {
     if (!profile || profile.length < 3) return '';
     const maxD = profile[profile.length - 1][0];
-    const els = profile.map(p => p[1]);
-    const lo = Math.min(...els), hi = Math.max(...els), span = Math.max(hi - lo, 1);
-    const pts = profile.map(([d, e]) => `${(d / maxD * 300).toFixed(1)},${(85 - (e - lo) / span * 75).toFixed(1)}`);
+    const ftEls = profile.map(q => q[1] * FT);
+    const step = niceStep(Math.max(...ftEls) - Math.min(...ftEls), 4);
+    const lo = Math.floor(Math.min(...ftEls) / step) * step, hi = Math.ceil(Math.max(...ftEls) / step) * step;
+    const X = d => CH.l + d / maxD * (CH.r - CH.l), Y = ft => CH.b - (ft - lo) / (hi - lo) * (CH.b - CH.t);
+    // Colored bands: merge consecutive stretches of the same steepness into one shape
+    let shapes = '', run = null;
+    const flush = () => { if (run) shapes += `<polygon fill="${SLOPE_BANDS[run.band][1]}" points="${run.pts.join(' ')} ${run.x1},${CH.b} ${run.x0},${CH.b}"/>`; };
+    for (let i = 0; i < profile.length - 1; i++) {
+      const [d0, e0] = profile[i], [d1, e1] = profile[i + 1];
+      const band = bandOf(Math.abs(e1 - e0) / Math.max(d1 - d0, 1) * 100);
+      const a = `${X(d0).toFixed(1)},${Y(e0 * FT).toFixed(1)}`, b = `${X(d1).toFixed(1)},${Y(e1 * FT).toFixed(1)}`;
+      if (run && run.band === band) { run.pts.push(b); run.x1 = X(d1).toFixed(1); }
+      else { flush(); run = { band, pts: [a, b], x0: X(d0).toFixed(1), x1: X(d1).toFixed(1) }; }
+    }
+    flush();
+    const line = profile.map(([d, e]) => `${X(d).toFixed(1)},${Y(e * FT).toFixed(1)}`).join(' ');
+    // Axes: elevation in feet on the left, distance along the bottom ending with the total
+    let axes = '';
+    for (let ft = lo; ft <= hi + 1; ft += step) {
+      axes += `<line x1="${CH.l}" x2="${CH.r}" y1="${Y(ft)}" y2="${Y(ft)}" class="grid"/><text x="${CH.l - 4}" y="${Y(ft) + 3}" class="axis" text-anchor="end">${Math.round(ft).toLocaleString()} ft</text>`;
+    }
+    const miles = maxD * FT >= 2640;
+    const toUnit = m => miles ? m * FT / 5280 : m * FT;
+    const xStep = niceStep(toUnit(maxD), 4);
+    for (let u = 0; u < toUnit(maxD) * 0.88; u += xStep) {
+      const x = X(miles ? u * 5280 / FT : u / FT);
+      axes += `<line x1="${x}" x2="${x}" y1="${CH.t}" y2="${CH.b}" class="grid"/><text x="${x}" y="${CH.b + 14}" class="axis" text-anchor="middle">${u === 0 ? '0' : miles ? +u.toFixed(2) + ' mi' : Math.round(u).toLocaleString() + ' ft'}</text>`;
+    }
+    axes += `<text x="${CH.r}" y="${CH.b + 14}" class="axis" text-anchor="end">${miles ? toUnit(maxD).toFixed(2) + ' mi' : fmtFt(maxD)}</text>`;
+    const used = [...new Set(profile.slice(1).map(([d, e], i) => bandOf(Math.abs(e - profile[i][1]) / Math.max(d - profile[i][0], 1) * 100)))].sort();
     return `<div class="profile"><h3>Elevation profile</h3>
-      <svg viewBox="0 0 300 90" preserveAspectRatio="none" role="img" aria-label="Elevation profile">
-        <polygon class="area" points="0,90 ${pts.join(' ')} 300,90"/></svg></div>`;
+      <div class="elev" data-profile='${JSON.stringify(profile)}' data-lo="${lo}" data-hi="${hi}">
+        <svg viewBox="0 0 ${CH.w} ${CH.h}" class="elev-chart" role="img" aria-label="Elevation profile, colored by steepness">
+          ${axes}${shapes}<polyline points="${line}" class="elev-line"/>
+          <g class="elev-cursor" visibility="hidden"><line y1="${CH.t}" y2="${CH.b}" class="elev-guide"/><circle r="5" class="elev-dot"/></g>
+        </svg>
+        <div class="elev-tip" hidden></div>
+      </div>
+      <ul class="elev-legend">${used.map(i => `<li><span class="swatch" style="background:${SLOPE_BANDS[i][1]}"></span>${SLOPE_BANDS[i][2]}</li>`).join('')}</ul>
+      <p class="source">Elevation data from OpenSkiMap. Hover or tap the chart for elevation and slope.</p></div>`;
+  }
+  // Hover/tap readout for every profile chart in the panel
+  function wireProfileCharts(root) {
+    root.querySelectorAll('.elev').forEach(el => {
+      const profile = JSON.parse(el.dataset.profile), lo = +el.dataset.lo, hi = +el.dataset.hi;
+      const svg = el.querySelector('svg'), cursor = el.querySelector('.elev-cursor'), tip = el.querySelector('.elev-tip');
+      const maxD = profile[profile.length - 1][0];
+      const show = e => {
+        const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+        const d = Math.min(Math.max((pt.x - CH.l) / (CH.r - CH.l), 0), 1) * maxD;
+        let i = 0;
+        while (i < profile.length - 1 && profile[i + 1][0] <= d) i++;
+        const j = Math.min(i + 1, profile.length - 1), k = j === i ? i - 1 : i; // the stretch under the cursor
+        const grade = Math.abs(profile[j][1] - profile[k][1]) / Math.max(profile[j][0] - profile[k][0], 1) * 100;
+        const near = d - profile[i][0] < (profile[j][0] - d) ? i : j;
+        const ft = profile[near][1] * FT;
+        const x = CH.l + profile[near][0] / maxD * (CH.r - CH.l), y = CH.b - (ft - lo) / (hi - lo) * (CH.b - CH.t);
+        cursor.setAttribute('visibility', 'visible');
+        cursor.querySelector('line').setAttribute('x1', x); cursor.querySelector('line').setAttribute('x2', x);
+        cursor.querySelector('circle').setAttribute('cx', x); cursor.querySelector('circle').setAttribute('cy', y);
+        tip.innerHTML = `<strong>${Math.round(ft).toLocaleString()} ft</strong><span>${deg(grade)} (${Math.round(grade)}%)</span><span class="sub">${fmtLen(profile[near][0])} in</span>`;
+        tip.hidden = false;
+        const box = el.getBoundingClientRect();
+        const px = (x / CH.w) * box.width;
+        tip.style.left = Math.min(Math.max(px + 12, 0), box.width - tip.offsetWidth) + 'px';
+        if (px + 12 + tip.offsetWidth > box.width) tip.style.left = Math.max(px - 12 - tip.offsetWidth, 0) + 'px';
+        tip.style.top = Math.max((y / CH.h) * box.height - tip.offsetHeight - 10, 0) + 'px';
+      };
+      const hide = () => { cursor.setAttribute('visibility', 'hidden'); tip.hidden = true; };
+      svg.addEventListener('pointermove', show);
+      svg.addEventListener('pointerdown', show);
+      svg.addEventListener('pointerleave', hide);
+    });
   }
 
   // ---------- Suggest a run ----------
@@ -617,10 +699,13 @@ async function getWeather() {
   }
 
   // ---------- Compared to Vail ----------
-  // Every rated Breck run gets a Vail run of the same difficulty to compare against: picked automatically
-  // (closest in average slope and length, favoring the famous ones), or chosen by the user.
+  // Every rated Breck run gets a trademark Vail run of the same difficulty to compare against, picked
+  // automatically (closest in average slope and length, favoring the famous ones). Users can search all
+  // Vail runs to compare against any other.
   const vailPick = {}; // Breck run name -> Vail run name the user chose
+  let vailSearchFor = null; // Breck run whose Vail search box is open
   const vailLevel = name => diffOf(VAIL[name]).level;
+  const VAIL_NAMES = Object.keys(VAIL).sort((a, b) => a.localeCompare(b));
   function defaultVail(r) {
     const run = r.run;
     const score = ([n, v]) => {
@@ -631,7 +716,22 @@ async function getWeather() {
       return s;
     };
     const same = Object.entries(VAIL).filter(([n]) => vailLevel(n) === r.level);
-    return same.sort((a, b) => score(a) - score(b))[0]?.[0] || null;
+    const trademark = same.filter(([, v]) => v.signature);
+    return (trademark.length ? trademark : same).sort((a, b) => score(a) - score(b))[0]?.[0] || null;
+  }
+  // Search results: with no query, trademark runs (this run's level first); otherwise every matching Vail run
+  function vailResults(breckName, q) {
+    const level = RUNS[breckName].level, nq = norm(q);
+    const names = !nq
+      ? VAIL_NAMES.filter(n => VAIL[n].signature).sort((a, b) => (vailLevel(b) === level) - (vailLevel(a) === level) || a.localeCompare(b))
+      : VAIL_NAMES.filter(n => norm(n).includes(nq)).sort((a, b) => norm(b).startsWith(nq) - norm(a).startsWith(nq));
+    if (!names.length) return '<li class="sub vail-none">No Vail runs match</li>';
+    return names.slice(0, 40).map(n => {
+      const v = VAIL[n], d = diffOf(v);
+      return `<li><button class="vail-option" data-vail-choose="${esc(n)}" data-for="${esc(breckName)}">${signIcon(d.icon, d.color)}
+        <span class="name">${esc(n)}</span>${v.signature ? '<span class="tm">Trademark</span>' : ''}
+        <span class="meta">${v.lengthM ? fmtLen(v.lengthM) : v.isArea ? 'Bowl' : ''}</span></button></li>`;
+    }).join('');
   }
 
   function vailSection(name) {
@@ -640,10 +740,6 @@ async function getWeather() {
     const vName = vailPick[name] || defaultVail(r);
     if (!vName) return '';
     const b = r.run, v = VAIL[vName], vd = diffOf(v);
-    const options = Object.entries(LEVELS).map(([k, lv]) => {
-      const names = Object.keys(VAIL).filter(n => vailLevel(n) === k).sort((x, y) => x.localeCompare(y));
-      return names.length ? `<optgroup label="${lv.sign}">${names.map(n => `<option ${n === vName ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '';
-    }).join('');
     const cell = (x, f) => (x ? f(x) : '—');
     const rows = [
       ['Difficulty', diffOf(b).label, vd.label],
@@ -656,8 +752,13 @@ async function getWeather() {
     const notes = vailCommentary(name, b, vName, v);
     return `<section class="vail">
       <h3>Compared to Vail</h3>
-      <label class="vail-pick"><span>Compare with</span>
-        <select data-vail="${esc(name)}" aria-label="Vail run to compare with">${options}</select></label>
+      <div class="vail-pick"><span>Compare with</span>
+        <button class="vail-current" data-vail-open="${esc(name)}" aria-expanded="${vailSearchFor === name}">
+          ${signIcon(vd.icon, vd.color)}<span class="name">${esc(vName)}</span><span class="change">Change</span></button></div>
+      ${vailSearchFor === name ? `<div class="vail-search">
+        <input type="search" data-vail-search="${esc(name)}" placeholder="Search all ${VAIL_NAMES.length} Vail runs…" autocomplete="off" aria-label="Search Vail runs">
+        <p class="sub">Trademark runs shown first. Type to search every Vail run.</p>
+        <ul class="vail-results">${vailResults(name, '')}</ul></div>` : ''}
       <p class="vail-headline">${notes.headline}</p>
       <table class="cmp-table vail-table">
         <thead><tr><th></th>
@@ -751,6 +852,16 @@ async function getWeather() {
     if (!t) return;
     const view = stack[stack.length - 1];
     if (t.dataset.share) return shareRun(t.dataset.share);
+    if (t.dataset.vailOpen) {
+      vailSearchFor = vailSearchFor === t.dataset.vailOpen ? null : t.dataset.vailOpen;
+      keepScroll(() => VIEWS.run({ name: t.dataset.vailOpen }));
+      return body.querySelector('[data-vail-search]')?.focus({ preventScroll: true });
+    }
+    if (t.dataset.vailChoose) {
+      vailPick[t.dataset.for] = t.dataset.vailChoose;
+      vailSearchFor = null;
+      return keepScroll(() => VIEWS.run({ name: t.dataset.for }));
+    }
     if (t.dataset.compare) { toggleCompare(t.dataset.compare); t.outerHTML = compareButton(t.dataset.compare); return; }
     if (t.dataset.uncompare) { toggleCompare(t.dataset.uncompare); return keepScroll(() => VIEWS.compare()); }
     if (t.dataset.run) return openRun(t.dataset.run, { from: view.type });
@@ -779,8 +890,10 @@ async function getWeather() {
   body.addEventListener('change', e => {
     const k = e.target.dataset.setList;
     if (k) { listState[k] = e.target.value; keepScroll(() => VIEWS.list()); }
-    const breckRun = e.target.dataset.vail;
-    if (breckRun) { vailPick[breckRun] = e.target.value; keepScroll(() => VIEWS.run({ name: breckRun })); }
+  });
+  body.addEventListener('input', e => {
+    const breckRun = e.target.dataset.vailSearch;
+    if (breckRun) body.querySelector('.vail-results').innerHTML = vailResults(breckRun, e.target.value);
   });
   const keepScroll = fn => { const y = panel.scrollTop; fn(); panel.scrollTop = y; };
 

@@ -291,6 +291,24 @@ select {
 .peak .btns { display: flex; gap: 8px; }
 .peak .btns .btn { flex: 1; }
 
+/* Elevation profile (OpenSkiMap style) */
+.elev { position: relative; }
+.profile .elev-chart { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: crosshair; }
+.elev-chart .grid { stroke: var(--border); stroke-width: 0.6; }
+.elev-chart .axis { font-size: 8.5px; fill: var(--muted); }
+.elev-chart polygon { opacity: .9; }
+.elev-line { fill: none; stroke: #c9ced6; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.elev-guide { stroke: var(--muted); stroke-width: 0.8; stroke-dasharray: 2 2; }
+.elev-dot { fill: none; stroke: var(--text); stroke-width: 2.2; }
+.elev-tip {
+  position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 1px; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow);
+  font-size: 13px; white-space: nowrap; pointer-events: none;
+}
+.elev-tip .sub { font-size: 11px; }
+.elev-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.elev-legend li { display: flex; align-items: center; gap: 5px; }
+
 /* Compare */
 .badge {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
@@ -321,7 +339,32 @@ select {
 .vail { margin: 4px 0 18px; padding: 14px; border-radius: 14px; border: 1px solid var(--border); }
 .vail h3 { margin-top: 0; }
 .vail-pick { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 14px; }
-.vail-pick select { flex: 1; min-width: 0; }
+.vail-current {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 40px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; text-align: left;
+}
+.vail-current svg { width: 16px; height: 16px; }
+.vail-current .name { flex: 1; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vail-current .change { font-size: 13px; font-weight: 600; color: var(--accent); }
+.vail-current[aria-expanded="true"] { border-color: var(--accent); }
+.vail-search { margin: 0 0 12px; }
+.vail-search input {
+  width: 100%; height: 40px; padding: 0 12px; font-size: 16px;
+  border: 1px solid var(--accent); border-radius: 10px; background: var(--bg); color: var(--text);
+}
+.vail-search > .sub { font-size: 12px; margin: 6px 2px; }
+.vail-results { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.vail-option {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px;
+  border: 0; border-top: 1px solid var(--border); background: transparent; text-align: left; cursor: pointer; font-size: 14px;
+}
+.vail-results li:first-child .vail-option { border-top: 0; }
+.vail-option:hover { background: var(--bg); }
+.vail-option svg { width: 15px; height: 15px; }
+.vail-option .name { font-weight: 600; }
+.vail-option .tm { font-size: 11px; font-weight: 650; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.vail-option .meta { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.vail-none { padding: 10px 12px; }
 .vail-headline { margin: 0 0 10px; font-size: 16px; font-weight: 650; line-height: 1.4; }
 .vail-headline .sub { display: block; font-weight: 400; font-size: 13px; margin-top: 2px; }
 .vail-table { margin-bottom: 10px; }
