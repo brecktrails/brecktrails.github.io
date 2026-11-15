@@ -1,8 +1,10 @@
-// Breck Trail Explorer: the official trail map with tappable run names, plus tools for first-time visitors.
-// Data comes from data/breck.json, built by tools/extract.html:
-//   labels: where each run name is printed on the map (PDF points, origin top-left)
-//   runs:   OpenSkiMap details for each run name that could be matched
-const OFFICIAL_PDF = 'https://www.breckenridge.com/-/aemasset/sitecore/breckenridge/maps/winter-2025-2026/20250926_BR_winter-trail_map_001.pdf';
+// Trail explorer: a resort's official trail map with tappable run names, plus tools for first-time visitors.
+// One copy of this file serves every resort. Each resort has a page (breck/, zermatt/) that loads its
+// settings from resorts/<id>.js into window.RESORT, then this file. A resort's data file holds:
+//   labels: where each run name or number is printed on the map (PDF points, origin top-left)
+//   runs:   OpenSkiMap details for each run that could be matched
+const R = window.RESORT;
+const BASE = '../'; // resort pages live one folder down from the shared files
 const FT = 3.28084;
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const isMobile = () => matchMedia('(max-width: 767px)').matches;
@@ -10,14 +12,25 @@ const $ = id => document.getElementById(id);
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-const fmtFt = m => Math.round(m * FT).toLocaleString() + ' ft';
-const fmtLen = m => m * FT >= 5280 ? (m * FT / 5280).toFixed(1) + ' mi' : fmtFt(m);
+// Feet and miles or meters and kilometers: each resort has a default, and the choice is remembered
+const UNITS_KEY = 'units:' + R.id;
+let units = R.units;
+try { units = localStorage.getItem(UNITS_KEY) || R.units; } catch { /* private browsing */ }
+const metric = () => units === 'metric';
+// Heights (elevation, vertical drop) and distances along a run. Everything is stored in meters.
+const fmtFt = m => (metric() ? Math.round(m).toLocaleString() + ' m' : Math.round(m * FT).toLocaleString() + ' ft');
+const fmtLen = m => (metric()
+  ? (m >= 1000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m).toLocaleString() + ' m')
+  : (m * FT >= 5280 ? (m * FT / 5280).toFixed(1) + ' mi' : fmtFt(m)));
 const deg = pct => Math.round(Math.atan(pct / 100) * 180 / Math.PI) + '°';
 // "Lower 4 O’Clock" -> "lower-4-oclock": used in share links and the run/<slug>/ preview pages
 const slugOf = name => norm(name).replace(/ /g, '-');
-const SITE_URL = 'https://brecktrails.github.io/';
+const SITE_URL = new URL(BASE, location.href).href;
 
 // ---------- Difficulty ----------
+// Two rating systems. North America (green circle, blue square, black diamonds): the rating comes from
+// OpenSkiMap. Europe (blue, red, black pistes and yellow off-piste itineraries): the rating is the color
+// of the number printed on the official map, read when the data was built.
 // OpenSkiMap difficulty -> North American trail sign. `level` groups them for filters.
 const DIFFICULTY = {
   novice: { label: 'Easiest', icon: 'circle', color: 'var(--green)', level: 'green' },
@@ -29,7 +42,22 @@ const DIFFICULTY = {
   freeride: { label: 'Freeride', icon: 'double', color: 'var(--black)', level: 'expert' },
 };
 const UNRATED = { label: 'Not rated', icon: 'none', color: 'var(--muted)', level: null };
-const LEVELS = {
+const EU = R.scheme === 'eu';
+const EU_DIFFICULTY = {
+  blue: { label: 'Easy', icon: 'circle', color: 'var(--blue)', level: 'blue' },
+  red: { label: 'Intermediate', icon: 'circle', color: 'var(--red)', level: 'red' },
+  black: { label: 'Difficult', icon: 'circle', color: 'var(--black)', level: 'black' },
+  yellow: { label: 'Itinerary (not groomed)', icon: 'circle', color: 'var(--yellow)', level: 'yellow' },
+};
+const EU_FROM_OSM = { novice: 'blue', easy: 'blue', intermediate: 'red', advanced: 'black', expert: 'black', freeride: 'yellow', extreme: 'yellow' };
+// Roughly how European colors line up with North American signs, for comparing against Vail
+const EU_TO_NA = { blue: 'green', red: 'blue', black: 'black', yellow: 'expert' };
+const LEVELS = EU ? {
+  blue: { name: 'Beginner', sign: 'Blue', icon: 'circle', color: 'var(--blue)', blurb: 'New or still learning to turn and stop' },
+  red: { name: 'Intermediate', sign: 'Red', icon: 'circle', color: 'var(--red)', blurb: 'Comfortable on most groomed pistes' },
+  black: { name: 'Advanced', sign: 'Black', icon: 'circle', color: 'var(--black)', blurb: 'Happy on steep, sometimes icy or bumpy pistes' },
+  yellow: { name: 'Off-piste', sign: 'Yellow itinerary', icon: 'circle', color: 'var(--yellow)', blurb: 'Marked but ungroomed routes, for strong skiers' },
+} : {
   green: { name: 'Beginner', sign: 'Green circle', icon: 'circle', color: 'var(--green)', blurb: 'New or still learning to turn and stop' },
   blue: { name: 'Intermediate', sign: 'Blue square', icon: 'square', color: 'var(--blue)', blurb: 'Comfortable on most groomed runs' },
   black: { name: 'Advanced', sign: 'Black diamond', icon: 'diamond', color: 'var(--black)', blurb: 'Happy on steeper runs and some bumps' },
@@ -45,42 +73,101 @@ function signIcon(kind, color = 'var(--muted)') {
   };
   return `<svg viewBox="0 0 20 20" aria-hidden="true">${shapes[kind]}</svg>`;
 }
+// diffOf: the North American sign for an OpenSkiMap rating (Breck and Vail runs).
+// Runs of this resort carry their own `diff` (see main), which follows the resort's rating system.
 const diffOf = run => DIFFICULTY[run?.difficulty] || UNRATED;
-const iconFor = run => { const d = diffOf(run); return `<span class="icon">${signIcon(d.icon, d.color)}</span>`; };
+const iconFor = r => `<span class="icon">${signIcon(r.diff.icon, r.diff.color)}</span>`;
 
-// ---------- Peaks ----------
-const PEAKS = [
-  { id: 10, blurb: 'The quietest peak and mostly advanced: black runs and tree skiing off the Falcon SuperChair.' },
-  { id: 9, blurb: 'Gentle greens and blues on the lower mountain, with steep expert runs up top off E-Chair. Quicksilver connects it to town.' },
-  { id: 8, blurb: 'The hub. Learning areas at the base, cruisers in the middle, and high-alpine bowls up top, including the Imperial SuperChair.' },
-  { id: 7, blurb: 'Wide, easygoing blue cruisers off the Independence SuperChair, with bowls above treeline.' },
-  { id: 6, blurb: 'Big, open above-treeline bowls and intermediate terrain off the Kensho SuperChair and Zendo Chair.' },
-];
-// Which peak a run belongs to, from where its name sits on the map (peaks run left to right: 10 → 6).
-// Approximate: boundaries are drawn by eye, with overrides for names that sit across a boundary.
-const PEAK_OVERRIDES = { 'Upper Lehman': 9, 'Whale’s Tail': 8, 'Easiest Way to Peak 9': 8 };
-function peakOf(l) {
-  if (PEAK_OVERRIDES[l.name]) return PEAK_OVERRIDES[l.name];
-  if (l.x < 225 && l.y < 620) return 10;
-  if (l.x < 470) return 9;
-  if (l.x < 850) return 8;
-  if (l.x < 1075) return 7;
-  return 6;
-}
+// ---------- Areas (Breck's peaks, Zermatt's sectors) ----------
+const AREAS = R.areas.map(a => ({ ...a, id: String(a.id) }));
+const areaName = id => AREAS.find(a => a.id === id)?.name || '';
+const T = R.text; // the resort's own wording: "Peaks" or "Sectors", and so on
 
-// ---------- Tips ----------
-const TIPS = [
-  ['Take it easy on the altitude', 'The base is about 9,600 ft and lifts go above 12,800 ft. Drink lots of water, go easy on day one, and expect to get winded faster than usual.'],
-  ['Get there on the free gondola', 'The BreckConnect Gondola runs from the North Gondola lot in town to the Peak 7 and Peak 8 bases. The Quicksilver SuperChair also leaves from the Peak 9 base near town.'],
-  ['Where beginners should start', 'Head to the learning areas at the Peak 8 and Peak 9 bases. Peak 9’s lower mountain has the most green runs to progress to.'],
-  ['Ski back to town', 'Lower 4 O’Clock and Lowest 4 O’Clock bring you from Peak 8 back down toward town at the end of the day, skipping the gondola line.'],
-  ['Above treeline is serious terrain', 'The bowls and chutes up high (Imperial, Horseshoe, Peak 6 bowls) are expert terrain, can be very windy, and some are hike-to. They also close for weather, so check what’s open.'],
-  ['Respect slow zones', 'Areas near the bases and lift lines are marked slow zones. Patrol enforces them.'],
-  ['Weather changes fast', 'Sun at the base can be a whiteout up top. Bring goggles for low light and an extra layer for the high lifts.'],
-];
+// ---------- Page ----------
+// The page itself is the same for every resort, so it is built here and filled in from the resort's settings.
+document.body.innerHTML = `
+  <section id="landing" class="landing">
+    <div class="landing-bg" aria-hidden="true" style="background-image:url('${BASE + R.map.small}')"></div>
+    <div class="landing-inner">
+      <a class="all-resorts" href="${BASE}">‹ All resorts</a>
+      <img class="landing-logo" src="${BASE}icons/logo.svg" alt="" width="72" height="72">
+      <p class="eyebrow">${R.eyebrow} · <span id="run-count"></span> runs</p>
+      <h1>${R.title}</h1>
+      <p class="lead">${R.lead}</p>
+      <div class="cta-row">
+        <a class="cta" href="#map">Open Trail Map
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        <button id="install" class="cta-secondary" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></svg>
+          Add to home screen</button>
+      </div>
+      <p id="install-help" class="install-help" hidden></p>
+      <ul class="features">${R.features.map(([t, d]) => `<li><strong>${t}</strong><span>${d}</span></li>`).join('')}</ul>
+    </div>
+    <p class="disclaimer">${R.disclaimer}</p>
+  </section>
+
+  <section id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="header-row">
+        <a class="brand" href="#" aria-label="${R.title} home">
+          <img src="${BASE}icons/logo.svg" alt="" width="30" height="30">
+          <span>${R.title}</span>
+        </a>
+        <div class="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="search" type="search" placeholder="${T.search}" autocomplete="off" aria-label="Find a run">
+          <ul id="results" class="results" role="listbox" hidden></ul>
+        </div>
+        <a class="official" id="official-link" href="${R.map.official}" target="_blank" rel="noopener">Official map ↗</a>
+      </div>
+      <nav class="toolbar" aria-label="Tools">
+        <button class="tool" data-open="suggest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>
+          Suggest a run</button>
+        <button class="tool" data-open="list">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          All runs</button>
+        <button class="tool" data-open="compare">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M17 4v16M3 8h8M13 16h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          Compare <span id="cmp-count" class="badge" hidden></span></button>
+        <button class="tool" data-open="peaks">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 20 9 7l4 7 2-3 7 9z"/></svg>
+          ${T.areas}</button>
+        <button class="tool" data-open="weather">
+          <span id="wx-chip" class="wx-chip" aria-hidden="true">⛅</span>
+          Weather</button>
+        <div class="levels" role="group" aria-label="Highlight runs on the map by difficulty">
+          <span class="levels-label">Show</span>
+          ${Object.entries(LEVELS).map(([k, v]) => `<button class="level" data-level="${k}" aria-pressed="false" title="Highlight ${v.sign.toLowerCase()} runs">${signIcon(v.icon, v.color)}</button>`).join('')}
+        </div>
+        <button class="tool" data-open="tips">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5v.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          First-timer tips</button>
+        <button class="tool" id="units" title="Switch between feet and meters"></button>
+      </nav>
+    </header>
+
+    <div class="map-wrap">
+      <div id="map" aria-label="${R.name} trail map"></div>
+      <div id="hovercard" class="hovercard" hidden></div>
+    </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <aside id="panel" class="panel" aria-live="polite" hidden>
+      <div class="panel-head">
+        <button id="back" class="icon-btn" aria-label="Back" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="grabber"></div>
+        <button id="close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div id="panel-body"></div>
+    </aside>
+  </section>`;
 
 // ---------- Install as an app ----------
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => {});
 (function setupInstall() {
   const btn = $('install'), help = $('install-help');
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
@@ -100,19 +187,17 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 })();
 
 // ---------- Weather ----------
-// Forecast from Open-Meteo (free, no account) for two spots: the Peak 8 base and the top of the
-// Imperial SuperChair. Open-Meteo adjusts temperatures to the elevation we pass in.
-const WX_SPOTS = [
-  { name: 'Base', sub: 'Peak 8 base · 9,600 ft', lat: 39.4808, lon: -106.0666, elev: 2926 },
-  { name: 'Summit', sub: 'Top of Imperial · 12,840 ft', lat: 39.4757, lon: -106.0961, elev: 3914 },
-];
-const WX_URL = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
+// Forecast from Open-Meteo (free, no account) for two spots: the base and the top of the mountain.
+// Open-Meteo adjusts temperatures to the elevation we pass in, and answers in the units we ask for
+// (°F, mph and inches, or °C, km/h and cm).
+const WX_SPOTS = R.weather.spots; // [base, summit]
+const wxUrl = () => 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
   latitude: WX_SPOTS.map(s => s.lat).join(','), longitude: WX_SPOTS.map(s => s.lon).join(','),
   elevation: WX_SPOTS.map(s => s.elev).join(','),
   current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,is_day',
   daily: 'weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,wind_gusts_10m_max',
-  temperature_unit: 'fahrenheit', wind_speed_unit: 'mph', precipitation_unit: 'inch',
-  timezone: 'America/Denver', forecast_days: 5,
+  ...(metric() ? {} : { temperature_unit: 'fahrenheit', wind_speed_unit: 'mph', precipitation_unit: 'inch' }),
+  timezone: R.weather.timezone, forecast_days: 5,
 });
 // WMO weather codes -> [label, emoji]
 function wxCode(code, day = 1) {
@@ -127,34 +212,45 @@ function wxCode(code, day = 1) {
   if (code <= 86) return ['Snow showers', '❄️'];
   return ['Thunderstorms', '⛈️'];
 }
-let wxCache = null; // { at, data } so reopening the panel doesn't refetch every time
+let wxCache = null; // { at, units, data } so reopening the panel doesn't refetch every time
 async function getWeather() {
-  if (wxCache && Date.now() - wxCache.at < 15 * 60e3) return wxCache.data;
-  const res = await fetch(WX_URL);
+  if (wxCache && wxCache.units === units && Date.now() - wxCache.at < 15 * 60e3) return wxCache.data;
+  const asked = units;
+  const res = await fetch(wxUrl());
   if (!res.ok) throw new Error('weather ' + res.status);
   const data = await res.json();
-  wxCache = { at: Date.now(), data };
+  wxCache = { at: Date.now(), units: asked, data };
   return data;
 }
 
 (async function main() {
   const [data, VAIL] = await Promise.all([
-    fetch('data/breck.json').then(r => r.json()),
+    fetch(BASE + R.data).then(r => r.json()),
     // Signature Vail runs for the "Compared to Vail" section (built by tools/build_vail.mjs); optional
-    fetch('data/vail.json').then(r => r.json()).then(d => d.runs).catch(() => ({})),
+    fetch(BASE + 'data/vail.json').then(r => r.json()).then(d => d.runs).catch(() => ({})),
   ]);
   const { width: W, height: H, labels, runs } = data;
 
   // One entry per run name (a name can be printed in several places on the map)
+  const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true }); // "9 Tuftern" before "10 Paradise"
   const RUNS = {};
   for (const l of labels) {
-    RUNS[l.name] ||= { name: l.name, run: runs[l.name] || null, peak: peakOf(l), labels: [] };
+    RUNS[l.name] ||= { name: l.name, run: runs[l.name] || null, area: String(R.areaOf(l)), labels: [] };
     RUNS[l.name].labels.push(l);
   }
-  const ALL = Object.values(RUNS).sort((a, b) => a.name.localeCompare(b.name));
-  for (const r of ALL) r.level = diffOf(r.run).level;
+  const ALL = Object.values(RUNS).sort((a, b) => byName(a.name, b.name));
+  for (const r of ALL) {
+    if (EU) {
+      // The color printed most often for this run on the map; OpenSkiMap's rating if the map had none
+      const votes = {};
+      for (const l of r.labels) if (l.official) votes[l.official] = (votes[l.official] || 0) + 1;
+      const color = Object.keys(votes).sort((a, b) => votes[b] - votes[a])[0] || EU_FROM_OSM[r.run?.difficulty];
+      r.diff = EU_DIFFICULTY[color] || UNRATED;
+    } else r.diff = diffOf(r.run);
+    r.level = r.diff.level;
+    r.naLevel = EU ? EU_TO_NA[r.level] : r.level; // the closest North American rating, for the Vail comparison
+  }
   $('run-count').textContent = ALL.length;
-  $('official-link').href = OFFICIAL_PDF;
 
   // ---------- Landing <-> map routing ----------
   // #map shows the map; #run/<slug> shows the map with that run open (what share links point to)
@@ -184,6 +280,8 @@ async function getWeather() {
   const SELECTED = { stroke: true, color: '#e0a800', weight: 2.5, opacity: 1, fill: true, fillColor: '#ffd400', fillOpacity: 0.45 };
   const LEVEL_STYLE = {
     green: { stroke: true, color: '#138a45', weight: 2, opacity: 1, fill: true, fillColor: '#3ddc84', fillOpacity: 0.35 },
+    red: { stroke: true, color: '#8f0f16', weight: 2, opacity: 1, fill: true, fillColor: '#ff8a80', fillOpacity: 0.45 },
+    yellow: { stroke: true, color: '#8a6100', weight: 2, opacity: 1, fill: true, fillColor: '#ffe066', fillOpacity: 0.5 },
     blue: { stroke: true, color: '#0d47a1', weight: 2, opacity: 1, fill: true, fillColor: '#64b5f6', fillOpacity: 0.4 },
     black: { stroke: true, color: '#111', weight: 2, opacity: 1, fill: true, fillColor: '#ffffff', fillOpacity: 0.55 },
     expert: { stroke: true, color: '#111', weight: 2.5, opacity: 1, dashArray: '4 3', fill: true, fillColor: '#ffffff', fillOpacity: 0.55 },
@@ -208,7 +306,8 @@ async function getWeather() {
         return textBox(p[0], p[1], Math.hypot(q[0] - p[0], q[1] - p[1]), l.h, rot, 1.5);
       });
     }
-    const boxes = [textBox(l.x, l.y, l.w, l.h, l.rot, 2, l.lines === 1 ? l.h * 1.2 : 0)];
+    // Breck prints a difficulty symbol before each name; a resort's data can say otherwise with lead/pad
+    const boxes = [textBox(l.x, l.y, l.w, l.h, l.rot, l.pad ?? 2, l.lead ?? (l.lines === 1 ? l.h * 1.2 : 0))];
     if (l.lines === 2) boxes.push(textBox(l.x2, l.y2, l.w2, l.h, l.rot));
     return boxes;
   }
@@ -220,20 +319,21 @@ async function getWeather() {
       maxBounds: L.latLngBounds(ll(-200, H + 200), ll(W + 200, -200)), maxBoundsViscosity: 0.8,
     });
     map.attributionControl.setPrefix(false).addAttribution(
-      `Trail map © Breckenridge Ski Resort (<a href="${OFFICIAL_PDF}" target="_blank" rel="noopener">official PDF</a>) · ` +
+      `Trail map © ${R.map.owner} (<a href="${R.map.official}" target="_blank" rel="noopener">official PDF</a>) · ` +
       'Run data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> via <a href="https://openskimap.org" target="_blank" rel="noopener">OpenSkiMap</a>');
 
     // Low-res map shows immediately; the sharp one swaps in once downloaded
     const imgBounds = L.latLngBounds(ll(0, H), ll(W, 0));
-    L.imageOverlay('trailmap-small.jpg', imgBounds).addTo(map);
+    L.imageOverlay(BASE + R.map.small, imgBounds).addTo(map);
     const sharp = new Image();
-    sharp.onload = () => L.imageOverlay('trailmap.jpg', imgBounds).addTo(map);
-    sharp.src = 'trailmap.jpg';
+    sharp.onload = () => L.imageOverlay(BASE + R.map.sharp, imgBounds).addTo(map);
+    sharp.src = BASE + R.map.sharp;
 
     // Start on the mountain itself, not the header text.
-    // On a phone, fill the screen height (centered on Peak 8) and let people pan sideways.
-    if (isMobile()) map.setView(ll(640, 500), Math.round(Math.log2(map.getSize().y / 760) * 4) / 4);
-    else map.fitBounds(L.latLngBounds(ll(0, H), ll(W, 120)));
+    // On a phone, fill the screen height (centered on the resort's chosen spot) and let people pan sideways.
+    const f = R.map.focus;
+    if (isMobile()) map.setView(ll(f.x, f.y), Math.round(Math.log2(map.getSize().y / f.span) * 4) / 4);
+    else map.fitBounds(L.latLngBounds(ll(0, H), ll(W, R.map.top)));
 
     map.createPane('hotspots').style.zIndex = 450;
     const renderer = L.canvas({ pane: 'hotspots', tolerance: isTouch ? 10 : 3 });
@@ -256,9 +356,9 @@ async function getWeather() {
 
   // ---------- Hover card (desktop) ----------
   function showHover(name) {
-    const r = RUNS[name], d = diffOf(r.run);
+    const r = RUNS[name], d = r.diff;
     $('hovercard').innerHTML = `${signIcon(d.icon, d.color)}<div><div class="hc-name">${esc(name)}</div>
-      <div class="hc-meta">${d.label} · Peak ${r.peak}${r.run?.lengthM ? ' · ' + fmtLen(r.run.lengthM) : ''}</div></div>`;
+      <div class="hc-meta">${d.label} · ${areaName(r.area)}${r.run?.lengthM ? ' · ' + fmtLen(r.run.lengthM) : ''}</div></div>`;
     $('hovercard').hidden = false;
   }
   const hideHover = () => { $('hovercard').hidden = true; };
@@ -330,16 +430,16 @@ async function getWeather() {
 
   const VIEWS = {
     run({ name }) {
-      const r = RUNS[name], run = r.run, d = diffOf(run);
-      const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent('breckenridge ' + name.replace(/’/g, "'"));
+      const r = RUNS[name], run = r.run, d = r.diff;
+      const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(R.videoSearch(r).replace(/’/g, "'"));
       let html = `<div class="run-head"><h2>${esc(name)}</h2>
           <button class="share" data-share="${esc(name)}">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Share</button></div>
-        <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· Peak ${r.peak}</span></div>
+        <div class="diff">${signIcon(d.icon, d.color)}<span>${d.label}</span><span class="sub">· ${areaName(r.area)}</span></div>
         ${compareButton(name)}`;
       if (run) {
-        html += `<p class="diff-note">Rating from OpenSkiMap. The run’s color on the trail map is the resort’s official rating.</p>`;
+        html += `<p class="diff-note">${EU ? 'Rating is the color printed on the official piste map.' : 'Rating from OpenSkiMap. The run’s color on the trail map is the resort’s official rating.'}</p>`;
         const stats = [];
         if (run.lengthM) stats.push(['Length', fmtLen(run.lengthM)]);
         if (run.verticalM) stats.push(['Vertical drop', fmtFt(run.verticalM)]);
@@ -354,7 +454,7 @@ async function getWeather() {
         html += profileChart(run.profile);
         html += vailSection(name);
       } else {
-        html += `<p class="empty">OpenSkiMap doesn’t have details for this run yet. Its color on the trail map shows the official difficulty.</p>`;
+        html += `<p class="empty">OpenSkiMap doesn’t have details for this run yet.${EU ? '' : ' Its color on the trail map shows the official difficulty.'}</p>`;
       }
       html += `<div class="actions">
         <a class="btn btn-yt" href="${yt}" target="_blank" rel="noopener">
@@ -375,16 +475,16 @@ async function getWeather() {
             <span class="icon">${signIcon(v.icon, v.color)}</span><strong>${v.name}</strong><span>${v.blurb}</span></button>`).join('')}</div>
         <h3>What sounds fun?</h3><div class="chips">${Object.entries(STYLES).map(([k, v]) =>
           `<button class="chip" data-set="style" data-val="${k}" aria-pressed="${s.style === k}">${v.label}</button>`).join('')}</div>
-        <h3>Where?</h3><div class="chips">${['any', ...PEAKS.map(p => p.id)].map(p =>
-          `<button class="chip" data-set="peak" data-val="${p}" aria-pressed="${String(s.peak) === String(p)}">${p === 'any' ? 'Any peak' : 'Peak ' + p}</button>`).join('')}</div>`;
+        <h3>Where?</h3><div class="chips">${['any', ...AREAS.map(a => a.id)].map(p =>
+          `<button class="chip" data-set="peak" data-val="${p}" aria-pressed="${s.peak === p}">${p === 'any' ? T.anyArea : areaName(p)}</button>`).join('')}</div>`;
       if (s.level) {
         const picks = suggestRuns(s);
         html += `<h3>Try these</h3>`;
         html += picks.length
-          ? `<ul class="cards">${picks.map(p => `<li><button class="card" data-run="${esc(p.name)}">${iconFor(p.run)}
+          ? `<ul class="cards">${picks.map(p => `<li><button class="card" data-run="${esc(p.name)}">${iconFor(p)}
               <span><strong>${esc(p.name)}</strong><span class="why">${p.why}</span></span></button></li>`).join('')}</ul>
              <p><button class="btn btn-outline btn-sm" data-action="reshuffle">Show me different ones</button></p>`
-          : `<p class="empty">No ${STYLES[s.style].label.toLowerCase()} runs at this level${s.peak !== 'any' ? ' on Peak ' + s.peak : ''}. Try another style or “Any peak”.</p>`;
+          : `<p class="empty">No ${STYLES[s.style].label.toLowerCase()} runs at this level${s.peak !== 'any' ? ' (' + areaName(s.peak) + ')' : ''}. Try another style or “${T.anyArea}”.</p>`;
       } else {
         html += `<p class="empty">Pick your level to see suggestions.</p>`;
       }
@@ -399,56 +499,57 @@ async function getWeather() {
           <div class="chips">${Object.entries(LEVELS).map(([k, v]) =>
             `<button class="chip" data-toggle-level="${k}" aria-pressed="${s.levels.has(k)}">${signIcon(v.icon, v.color)}${v.sign}</button>`).join('')}</div>
           <div class="line">
-            <select data-set-list="peak" aria-label="Peak">${['any', ...PEAKS.map(p => p.id)].map(p =>
-              `<option value="${p}" ${String(s.peak) === String(p) ? 'selected' : ''}>${p === 'any' ? 'All peaks' : 'Peak ' + p}</option>`).join('')}</select>
+            <select data-set-list="peak" aria-label="${T.area}">${['any', ...AREAS.map(a => a.id)].map(p =>
+              `<option value="${p}" ${s.peak === p ? 'selected' : ''}>${p === 'any' ? T.allAreas : areaName(p)}</option>`).join('')}</select>
             <select data-set-list="sort" aria-label="Sort by">${Object.entries(SORTS).map(([k, v]) =>
               `<option value="${k}" ${s.sort === k ? 'selected' : ''}>Sort: ${v.label}</option>`).join('')}</select>
           </div>
         </div>
         <p class="count">${rows.length} run${rows.length === 1 ? '' : 's'}</p>
-        <ul class="row-list">${rows.map(r => `<li><button class="row" data-run="${esc(r.name)}">${iconFor(r.run)}
-          <span class="name">${esc(r.name)}</span><span class="meta">Peak ${r.peak}${SORTS[s.sort].meta(r)}</span></button></li>`).join('')}</ul>`;
+        <ul class="row-list">${rows.map(r => `<li><button class="row" data-run="${esc(r.name)}">${iconFor(r)}
+          <span class="name">${esc(r.name)}</span><span class="meta">${areaName(r.area)}${SORTS[s.sort].meta(r)}</span></button></li>`).join('')}</ul>`;
     },
 
     peaks() {
-      body.innerHTML = `<h2>The five peaks</h2>
-        <p class="intro">Breck is five connected peaks, numbered 6 to 10 from right to left on the map. Lifts and runs link them all.</p>
-        ${PEAKS.map(p => {
-          const mine = ALL.filter(r => r.peak === p.id);
+      body.innerHTML = `<h2>${T.areasTitle}</h2>
+        <p class="intro">${T.areasIntro}</p>
+        ${AREAS.map(p => {
+          const mine = ALL.filter(r => r.area === p.id);
           const mix = Object.entries(LEVELS).map(([k, v]) => [v, mine.filter(r => r.level === k).length]).filter(([, n]) => n);
-          return `<section class="peak"><h4>Peak ${p.id}</h4><p>${p.blurb}</p>
+          return `<section class="peak"><h4>${p.name}</h4><p>${p.blurb}</p>
             <div class="mix">${mix.map(([v, n]) => `<span title="${v.sign}">${signIcon(v.icon, v.color)}${n}</span>`).join('')}<span class="sub">${mine.length} runs</span></div>
             <div class="btns"><button class="btn btn-outline btn-sm" data-show-peak="${p.id}">Show on map</button>
             <button class="btn btn-outline btn-sm" data-list-peak="${p.id}">List runs</button></div></section>`;
         }).join('')}
-        <p class="source">Peak groupings are based on where each run sits on the trail map.</p>`;
+        <p class="source">${T.areasSource}</p>`;
     },
 
     weather() {
       body.innerHTML = `<h2>Mountain weather</h2><p class="intro">Loading the latest forecast…</p>`;
       getWeather().then(([base, top]) => {
         if (stack[stack.length - 1]?.type !== 'weather') return; // panel moved on while loading
+        const m = wxCache.units === 'metric', windUnit = m ? 'km/h' : 'mph', snowUnit = m ? ' cm' : '"';
         const spot = (s, w) => {
           const [label, icon] = wxCode(w.current.weather_code, w.current.is_day);
-          return `<div class="wx-spot"><div class="wx-name">${s.name}</div><div class="sub">${s.sub}</div>
+          return `<div class="wx-spot"><div class="wx-name">${s.name}</div><div class="sub">${s.place} · ${fmtFt(s.elev)}</div>
             <div class="wx-now"><span class="wx-icon">${icon}</span><span class="wx-temp">${Math.round(w.current.temperature_2m)}°</span></div>
             <div class="wx-cond">${label}</div>
             <div class="sub">Feels like ${Math.round(w.current.apparent_temperature)}°</div>
-            <div class="sub">Wind ${Math.round(w.current.wind_speed_10m)} mph, gusts ${Math.round(w.current.wind_gusts_10m)}</div></div>`;
+            <div class="sub">Wind ${Math.round(w.current.wind_speed_10m)} ${windUnit}, gusts ${Math.round(w.current.wind_gusts_10m)}</div></div>`;
         };
-        // Callouts a first-timer would want to know about
+        // Callouts a first-timer would want to know about (thresholds: 40 mph gusts, 3" of snow, 0°F)
         const alerts = [];
-        if (top.current.wind_gusts_10m >= 40) alerts.push(['💨', 'Strong winds up top', 'Upper lifts like Imperial and the T-bar may be on wind hold.']);
+        if (top.current.wind_gusts_10m >= (m ? 65 : 40)) alerts.push(['💨', 'Strong winds up top', R.weather.windNote]);
         const snow24 = top.daily.snowfall_sum[0] + top.daily.snowfall_sum[1];
-        if (snow24 >= 3) alerts.push(['❄️', 'Fresh snow coming', `About ${snow24.toFixed(0)}" forecast up top today and tomorrow.`]);
-        if (top.current.apparent_temperature <= 0) alerts.push(['🥶', 'Bitter cold up top', 'Cover all skin; frostbite can happen fast in wind.']);
+        if (snow24 >= (m ? 8 : 3)) alerts.push(['❄️', 'Fresh snow coming', `About ${snow24.toFixed(0)}${snowUnit} forecast up top today and tomorrow.`]);
+        if (top.current.apparent_temperature <= (m ? -18 : 0)) alerts.push(['🥶', 'Bitter cold up top', 'Cover all skin; frostbite can happen fast in wind.']);
         const days = top.daily.time.map((t, i) => {
           const [label, icon] = wxCode(base.daily.weather_code[i]);
           const day = i === 0 ? 'Today' : new Date(t + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
           const snow = top.daily.snowfall_sum[i];
           return `<li><span class="wx-day">${day}</span><span title="${label}">${icon}</span>
             <span class="wx-hilo">${Math.round(base.daily.temperature_2m_max[i])}° <span class="sub">/ ${Math.round(base.daily.temperature_2m_min[i])}°</span></span>
-            <span class="wx-snow">${snow >= 0.1 ? '❄️ ' + snow.toFixed(1) + '"' : '<span class="sub">no snow</span>'}</span></li>`;
+            <span class="wx-snow">${snow >= (m ? 0.5 : 0.1) ? '❄️ ' + snow.toFixed(m ? 0 : 1) + snowUnit : '<span class="sub">no snow</span>'}</span></li>`;
         }).join('');
         const updated = new Date(wxCache.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         body.innerHTML = `<h2>Mountain weather</h2><p class="intro">Updated ${updated}</p>
@@ -474,8 +575,8 @@ async function getWeather() {
       const rs = compareList.map(n => RUNS[n]);
       // Each row: label, value per run, and which way is "most" (to bold the standout)
       const rows = [
-        ['Difficulty', r => diffOf(r.run).label],
-        ['Peak', r => 'Peak ' + r.peak],
+        ['Difficulty', r => r.diff.label],
+        [T.area, r => areaName(r.area)],
         ['Length', r => r.run?.lengthM ? fmtLen(r.run.lengthM) : '—', r => r.run?.lengthM],
         ['Vertical drop', r => r.run?.verticalM ? fmtFt(r.run.verticalM) : '—', r => r.run?.verticalM],
         ['Top', r => r.run?.topM ? fmtFt(r.run.topM) : '—', r => r.run?.topM],
@@ -501,7 +602,7 @@ async function getWeather() {
 
     tips() {
       body.innerHTML = `<h2>First-timer tips</h2>
-        <ul class="tips">${TIPS.map(([t, d]) => `<li><strong>${t}</strong><span>${d}</span></li>`).join('')}</ul>
+        <ul class="tips">${R.tips.map(([t, d]) => `<li><strong>${t}</strong><span>${d}</span></li>`).join('')}</ul>
         <p class="source">General advice for planning. On the mountain, follow posted signs, closures and ski patrol.</p>`;
     },
   };
@@ -534,7 +635,8 @@ async function getWeather() {
   function profileChart(profile) {
     if (!profile || profile.length < 3) return '';
     const maxD = profile[profile.length - 1][0];
-    const ftEls = profile.map(q => q[1] * FT);
+    const EL = metric() ? 1 : FT, elUnit = metric() ? ' m' : ' ft';
+    const ftEls = profile.map(q => q[1] * EL);
     const step = niceStep(Math.max(...ftEls) - Math.min(...ftEls), 4);
     const lo = Math.floor(Math.min(...ftEls) / step) * step, hi = Math.ceil(Math.max(...ftEls) / step) * step;
     const X = d => CH.l + d / maxD * (CH.r - CH.l), Y = ft => CH.b - (ft - lo) / (hi - lo) * (CH.b - CH.t);
@@ -544,25 +646,27 @@ async function getWeather() {
     for (let i = 0; i < profile.length - 1; i++) {
       const [d0, e0] = profile[i], [d1, e1] = profile[i + 1];
       const band = bandOf(Math.abs(e1 - e0) / Math.max(d1 - d0, 1) * 100);
-      const a = `${X(d0).toFixed(1)},${Y(e0 * FT).toFixed(1)}`, b = `${X(d1).toFixed(1)},${Y(e1 * FT).toFixed(1)}`;
+      const a = `${X(d0).toFixed(1)},${Y(e0 * EL).toFixed(1)}`, b = `${X(d1).toFixed(1)},${Y(e1 * EL).toFixed(1)}`;
       if (run && run.band === band) { run.pts.push(b); run.x1 = X(d1).toFixed(1); }
       else { flush(); run = { band, pts: [a, b], x0: X(d0).toFixed(1), x1: X(d1).toFixed(1) }; }
     }
     flush();
-    const line = profile.map(([d, e]) => `${X(d).toFixed(1)},${Y(e * FT).toFixed(1)}`).join(' ');
-    // Axes: elevation in feet on the left, distance along the bottom ending with the total
+    const line = profile.map(([d, e]) => `${X(d).toFixed(1)},${Y(e * EL).toFixed(1)}`).join(' ');
+    // Axes: elevation on the left, distance along the bottom ending with the total
     let axes = '';
     for (let ft = lo; ft <= hi + 1; ft += step) {
-      axes += `<line x1="${CH.l}" x2="${CH.r}" y1="${Y(ft)}" y2="${Y(ft)}" class="grid"/><text x="${CH.l - 4}" y="${Y(ft) + 3}" class="axis" text-anchor="end">${Math.round(ft).toLocaleString()} ft</text>`;
+      axes += `<line x1="${CH.l}" x2="${CH.r}" y1="${Y(ft)}" y2="${Y(ft)}" class="grid"/><text x="${CH.l - 4}" y="${Y(ft) + 3}" class="axis" text-anchor="end">${Math.round(ft).toLocaleString()}${elUnit}</text>`;
     }
-    const miles = maxD * FT >= 2640;
-    const toUnit = m => miles ? m * FT / 5280 : m * FT;
+    // Long runs are marked in miles or kilometers, short ones in feet or meters
+    const miles = metric() ? maxD >= 1000 : maxD * FT >= 2640;
+    const perM = metric() ? (miles ? 1 / 1000 : 1) : (miles ? FT / 5280 : FT);
+    const toUnit = m => m * perM, bigUnit = metric() ? ' km' : ' mi';
     const xStep = niceStep(toUnit(maxD), 4);
     for (let u = 0; u < toUnit(maxD) * 0.88; u += xStep) {
-      const x = X(miles ? u * 5280 / FT : u / FT);
-      axes += `<line x1="${x}" x2="${x}" y1="${CH.t}" y2="${CH.b}" class="grid"/><text x="${x}" y="${CH.b + 14}" class="axis" text-anchor="middle">${u === 0 ? '0' : miles ? +u.toFixed(2) + ' mi' : Math.round(u).toLocaleString() + ' ft'}</text>`;
+      const x = X(u / perM);
+      axes += `<line x1="${x}" x2="${x}" y1="${CH.t}" y2="${CH.b}" class="grid"/><text x="${x}" y="${CH.b + 14}" class="axis" text-anchor="middle">${u === 0 ? '0' : miles ? +u.toFixed(2) + bigUnit : Math.round(u).toLocaleString() + elUnit}</text>`;
     }
-    axes += `<text x="${CH.r}" y="${CH.b + 14}" class="axis" text-anchor="end">${miles ? toUnit(maxD).toFixed(2) + ' mi' : fmtFt(maxD)}</text>`;
+    axes += `<text x="${CH.r}" y="${CH.b + 14}" class="axis" text-anchor="end">${miles ? toUnit(maxD).toFixed(2) + bigUnit : fmtFt(maxD)}</text>`;
     const used = [...new Set(profile.slice(1).map(([d, e], i) => bandOf(Math.abs(e - profile[i][1]) / Math.max(d - profile[i][0], 1) * 100)))].sort();
     return `<div class="profile"><h3>Elevation profile</h3>
       <div class="elev" data-profile='${JSON.stringify(profile)}' data-lo="${lo}" data-hi="${hi}">
@@ -589,12 +693,12 @@ async function getWeather() {
         const j = Math.min(i + 1, profile.length - 1), k = j === i ? i - 1 : i; // the stretch under the cursor
         const grade = Math.abs(profile[j][1] - profile[k][1]) / Math.max(profile[j][0] - profile[k][0], 1) * 100;
         const near = d - profile[i][0] < (profile[j][0] - d) ? i : j;
-        const ft = profile[near][1] * FT;
+        const ft = profile[near][1] * (metric() ? 1 : FT);
         const x = CH.l + profile[near][0] / maxD * (CH.r - CH.l), y = CH.b - (ft - lo) / (hi - lo) * (CH.b - CH.t);
         cursor.setAttribute('visibility', 'visible');
         cursor.querySelector('line').setAttribute('x1', x); cursor.querySelector('line').setAttribute('x2', x);
         cursor.querySelector('circle').setAttribute('cx', x); cursor.querySelector('circle').setAttribute('cy', y);
-        tip.innerHTML = `<strong>${Math.round(ft).toLocaleString()} ft</strong><span>${deg(grade)} (${Math.round(grade)}%)</span><span class="sub">${fmtLen(profile[near][0])} in</span>`;
+        tip.innerHTML = `<strong>${Math.round(ft).toLocaleString()}${metric() ? ' m' : ' ft'}</strong><span>${deg(grade)} (${Math.round(grade)}%)</span><span class="sub">${fmtLen(profile[near][0])} in</span>`;
         tip.hidden = false;
         const box = el.getBoundingClientRect();
         const px = (x / CH.w) * box.width;
@@ -625,7 +729,7 @@ async function getWeather() {
   function suggestRuns(s) {
     const style = STYLES[s.style];
     // Skip short connectors: they're on the map but not much of a run on their own
-    const pool = ALL.filter(r => r.run && r.level === s.level && (s.peak === 'any' || r.peak === Number(s.peak)) &&
+    const pool = ALL.filter(r => r.run && r.level === s.level && (s.peak === 'any' || r.area === s.peak) &&
       (r.run.isArea || r.run.lengthM >= 250) && style.ok(r))
       .sort((a, b) => style.score(b) - style.score(a)).slice(0, 12);
     // Rotate through the best matches, three at a time
@@ -639,7 +743,7 @@ async function getWeather() {
     if (run.verticalM) bits.push(fmtFt(run.verticalM) + ' drop');
     if (run.avgGradePct) bits.push(`avg ${deg(run.avgGradePct)} slope`);
     const tags = tagsOf(run).filter(t => t !== 'Snowmaking');
-    return [`Peak ${r.peak}`, ...bits, ...tags].join(' · ');
+    return [areaName(r.area), ...bits, ...tags].join(' · ');
   }
 
   // ---------- All runs ----------
@@ -652,8 +756,8 @@ async function getWeather() {
   };
   function filteredRuns(s) {
     const sort = SORTS[s.sort];
-    return ALL.filter(r => (!s.levels.size || s.levels.has(r.level)) && (s.peak === 'any' || r.peak === Number(s.peak)))
-      .sort((a, b) => sort.asc ? a.name.localeCompare(b.name) : sort.key(b) - sort.key(a) || a.name.localeCompare(b.name));
+    return ALL.filter(r => (!s.levels.size || s.levels.has(r.level)) && (s.peak === 'any' || r.area === s.peak))
+      .sort((a, b) => sort.asc ? byName(a.name, b.name) : sort.key(b) - sort.key(a) || byName(a.name, b.name));
   }
 
   // ---------- Compare runs ----------
@@ -715,13 +819,13 @@ async function getWeather() {
       else if (run.verticalM && v.verticalM) s += Math.abs(Math.log(run.verticalM / v.verticalM));
       return s;
     };
-    const same = Object.entries(VAIL).filter(([n]) => vailLevel(n) === r.level);
+    const same = Object.entries(VAIL).filter(([n]) => vailLevel(n) === r.naLevel);
     const trademark = same.filter(([, v]) => v.signature);
     return (trademark.length ? trademark : same).sort((a, b) => score(a) - score(b))[0]?.[0] || null;
   }
   // Search results: with no query, trademark runs (this run's level first); otherwise every matching Vail run
   function vailResults(breckName, q) {
-    const level = RUNS[breckName].level, nq = norm(q);
+    const level = RUNS[breckName].naLevel, nq = norm(q);
     const names = !nq
       ? VAIL_NAMES.filter(n => VAIL[n].signature).sort((a, b) => (vailLevel(b) === level) - (vailLevel(a) === level) || a.localeCompare(b))
       : VAIL_NAMES.filter(n => norm(n).includes(nq)).sort((a, b) => norm(b).startsWith(nq) - norm(a).startsWith(nq));
@@ -742,14 +846,14 @@ async function getWeather() {
     const b = r.run, v = VAIL[vName], vd = diffOf(v);
     const cell = (x, f) => (x ? f(x) : '—');
     const rows = [
-      ['Difficulty', diffOf(b).label, vd.label],
+      ['Difficulty', r.diff.label, vd.label],
       ['Length', cell(b.lengthM, fmtLen), cell(v.lengthM, fmtLen)],
       ['Vertical drop', cell(b.verticalM, fmtFt), cell(v.verticalM, fmtFt)],
       ['Average slope', cell(b.avgGradePct, deg), cell(v.avgGradePct, deg)],
       ['Steepest pitch', cell(b.maxGradePct, deg), cell(v.maxGradePct, deg)],
       ['Top elevation', cell(b.topM, fmtFt), cell(v.topM, fmtFt)],
     ];
-    const notes = vailCommentary(name, b, vName, v);
+    const notes = vailCommentary(r, vName, v);
     return `<section class="vail">
       <h3>Compared to Vail</h3>
       <div class="vail-pick"><span>Compare with</span>
@@ -760,6 +864,7 @@ async function getWeather() {
         <p class="sub">Trademark runs shown first. Type to search every Vail run.</p>
         <ul class="vail-results">${vailResults(name, '')}</ul></div>` : ''}
       <p class="vail-headline">${notes.headline}</p>
+      ${EU ? '<p class="sub">Ratings differ: a European blue is about a US green, a red is about a US blue, and black is black.</p>' : ''}
       <table class="cmp-table vail-table">
         <thead><tr><th></th>
           <th scope="col"><span class="swatch" style="background:${CMP_COLORS[0]}"></span>${esc(name)}</th>
@@ -771,8 +876,8 @@ async function getWeather() {
   }
 
   // Plain-English comparison, written from the stats (no hand-written text per run pair)
-  function vailCommentary(bName, b, vName, v) {
-    const B = esc(bName), V = esc(vName), points = [];
+  function vailCommentary(r, vName, v) {
+    const b = r.run, V = esc(vName), points = [];
     const slope = p => Math.atan(p / 100) * 180 / Math.PI;
     const dSlope = b.avgGradePct != null && v.avgGradePct != null ? slope(b.avgGradePct) - slope(v.avgGradePct) : null;
     const lenRatio = b.lengthM && v.lengthM ? b.lengthM / v.lengthM : null;
@@ -793,8 +898,8 @@ async function getWeather() {
 
     if (lenRatio && b.verticalM && v.verticalM) {
       const len = lenRatio < 1.15 && lenRatio > 0.87 ? `about the same length as ${V}` : `${pct(lenRatio)}% ${lenRatio > 1 ? 'longer' : 'shorter'} than ${V}`;
-      const dv = (b.verticalM - v.verticalM) * FT;
-      const vert = Math.abs(dv) < 100 ? 'about the same vertical' : `${Math.round(Math.abs(dv)).toLocaleString()} ft ${dv > 0 ? 'more' : 'less'} vertical`;
+      const dv = b.verticalM - v.verticalM; // meters; "about the same" is within 100 ft
+      const vert = Math.abs(dv) < 30 ? 'about the same vertical' : `${fmtFt(Math.abs(dv))} ${dv > 0 ? 'more' : 'less'} vertical`;
       points.push(`At ${fmtLen(b.lengthM)}, it’s ${len}, with ${vert}.`);
     } else if (b.verticalM && v.verticalM) {
       points.push(`It drops ${fmtFt(b.verticalM)} top to bottom, compared with ${fmtFt(v.verticalM)} on ${V}.`);
@@ -811,15 +916,16 @@ async function getWeather() {
     }
     // The big Breck vs Vail difference: altitude
     if (b.topM && v.topM) {
-      const dTop = (b.topM - v.topM) * FT;
-      if (dTop > 400) points.push(`It starts ${(Math.round(dTop / 100) * 100).toLocaleString()} ft higher than ${V} (${fmtFt(b.topM)}). The air is thinner, so expect to tire sooner on your first days.`);
-      else if (dTop < -400) points.push(`It sits ${(Math.round(-dTop / 100) * 100).toLocaleString()} ft lower than ${V}.`);
+      const dTop = b.topM - v.topM; // meters; only worth a mention beyond about 400 ft
+      const round = x => fmtFt(metric() ? Math.round(x / 50) * 50 : Math.round(x * FT / 100) * 100 / FT);
+      if (dTop > 120) points.push(`It starts ${round(dTop)} higher than ${V} (${fmtFt(b.topM)}). The air is thinner, so expect to tire sooner on your first days.`);
+      else if (dTop < -120) points.push(`It sits ${round(-dTop)} lower than ${V}.`);
     }
     const bt = tagsOf(b), vt = tagsOf(v);
     if (bt.includes('Moguls') && !vt.includes('Moguls')) points.push(`OpenSkiMap lists it as a mogul run, unlike ${V}.`);
     if (bt.includes('Gladed / trees') && !vt.includes('Gladed / trees')) points.push('It’s gladed: expect to ski through trees.');
     if (bt.includes('Groomed') && vt.includes('Moguls')) points.push(`It’s groomed, so smoother than ${V}’s bumps.`);
-    if (diffOf(v).level !== diffOf(b).level) points.push(`Heads up: ${V} is rated ${diffOf(v).label}, this run is ${diffOf(b).label}.`);
+    if (diffOf(v).level !== r.naLevel) points.push(`Heads up: ${V} is rated ${diffOf(v).label}${EU ? ' at Vail' : ''}, this run is ${r.diff.label}${EU ? ' (' + LEVELS[r.level].sign.toLowerCase() + ')' : ''}.`);
     return { headline, points };
   }
 
@@ -827,9 +933,9 @@ async function getWeather() {
   // Links point at run/<slug>/, a small page with a preview card (built by tools/make-share-pages.html)
   // that forwards to #run/<slug>.
   async function shareRun(name) {
-    const r = RUNS[name], d = diffOf(r.run);
-    const url = SITE_URL + 'run/' + slugOf(name) + '/';
-    const text = `${name} at Breckenridge: ${d.label}, Peak ${r.peak}`;
+    const r = RUNS[name], d = r.diff;
+    const url = SITE_URL + R.sharePath(slugOf(name));
+    const text = `${name} at ${R.name}: ${d.label}, ${areaName(r.area)}`;
     if (navigator.share && isTouch) {
       try { await navigator.share({ title: name, text, url }); } catch { /* closed the share sheet */ }
       return;
@@ -877,7 +983,7 @@ async function getWeather() {
       return keepScroll(() => VIEWS.list());
     }
     if (t.dataset.showPeak) {
-      const ls = ALL.filter(r => r.peak === Number(t.dataset.showPeak)).flatMap(r => hotspots[r.name]);
+      const ls = ALL.filter(r => r.area === t.dataset.showPeak).flatMap(r => hotspots[r.name]);
       if (isMobile()) closePanel();
       return map.flyToBounds(L.featureGroup(ls).getBounds(), { padding: [30, 30], duration: 0.7 });
     }
@@ -904,10 +1010,19 @@ async function getWeather() {
     open ? closePanel() : showView({ type: b.dataset.open });
   }));
 
+  // ---------- Feet / meters ----------
+  const unitsLabel = () => { $('units').textContent = metric() ? 'Units: m · km' : 'Units: ft · mi'; };
+  unitsLabel();
+  $('units').addEventListener('click', () => {
+    units = metric() ? 'imperial' : 'metric';
+    try { localStorage.setItem(UNITS_KEY, units); } catch { /* private browsing */ }
+    unitsLabel();
+    if (stack.length) keepScroll(renderTop);
+    showWxChip();
+  });
+
   // ---------- Level highlight toggles ----------
   document.querySelectorAll('.level').forEach(b => {
-    const v = LEVELS[b.dataset.level];
-    b.innerHTML = signIcon(v.icon, v.color);
     b.addEventListener('click', () => {
       const k = b.dataset.level;
       levelsOn.has(k) ? levelsOn.delete(k) : levelsOn.add(k);
@@ -926,7 +1041,7 @@ async function getWeather() {
       .sort((a, b) => norm(b.name).startsWith(q) - norm(a.name).startsWith(q)).slice(0, 8);
     active = hits.length ? 0 : -1;
     resultsList.innerHTML = hits.length
-      ? hits.map((r, i) => `<li role="option" data-name="${esc(r.name)}" aria-selected="${i === 0}">${iconFor(r.run)}${esc(r.name)}<span class="meta">Peak ${r.peak}</span></li>`).join('')
+      ? hits.map((r, i) => `<li role="option" data-name="${esc(r.name)}" aria-selected="${i === 0}">${iconFor(r)}${esc(r.name)}<span class="meta">${areaName(r.area)}</span></li>`).join('')
       : '<li aria-disabled="true">No matching runs</li>';
     resultsList.hidden = false;
   }
@@ -951,9 +1066,12 @@ async function getWeather() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); hideResults(); } });
 
   // Current conditions on the toolbar button, so the weather is visible without opening anything
-  getWeather().then(([base]) => {
-    $('wx-chip').textContent = `${wxCode(base.current.weather_code, base.current.is_day)[1]} ${Math.round(base.current.temperature_2m)}°`;
-  }).catch(() => {});
+  function showWxChip() {
+    getWeather().then(([base]) => {
+      $('wx-chip').textContent = `${wxCode(base.current.weather_code, base.current.is_day)[1]} ${Math.round(base.current.temperature_2m)}°`;
+    }).catch(() => {});
+  }
+  showWxChip();
 
   route();
   window.APP = { get map() { return map; }, RUNS, openRun, showView, levelsOn }; // handy for debugging in the console

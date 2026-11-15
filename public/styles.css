@@ -425,3 +425,32 @@ select {
   .actions .btn { flex: 1; height: 44px; font-size: 14px; }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+
+/* ---------- More than one resort ---------- */
+:root { --red: #d7262e; --yellow: #e0a100; }
+.all-resorts { display: inline-block; margin-bottom: 22px; color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; opacity: .85; }
+.all-resorts:hover { opacity: 1; text-decoration: underline; }
+#units { white-space: nowrap; }
+
+/* Home page: pick a resort */
+.home .landing-bg { background-image: url("maps/zermatt-small.jpg"); background-position: center 30%; }
+.resorts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.resort {
+  position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
+  min-height: 210px; padding: 18px; border-radius: 18px; overflow: hidden;
+  color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.25);
+  box-shadow: 0 10px 30px rgba(0,0,0,.3); transition: transform .15s ease;
+}
+.resort:hover { transform: translateY(-3px); }
+.resort::before { content: ""; position: absolute; inset: 0; background: var(--photo) center / cover no-repeat; }
+.resort::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8,22,40,.05) 0%, rgba(8,22,40,.55) 55%, rgba(8,22,40,.92) 100%); }
+.resort > * { position: relative; z-index: 1; }
+.resort .where { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .9; }
+.resort strong { font-size: 26px; line-height: 1.1; letter-spacing: -.01em; }
+.resort .what { font-size: 14px; opacity: .9; }
+.resort .go { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.resort .go svg { width: 18px; height: 18px; }
+@media (max-width: 767px) {
+  .resorts { grid-template-columns: 1fr; }
+  .resort { min-height: 170px; }
+}

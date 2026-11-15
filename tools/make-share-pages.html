@@ -3,7 +3,7 @@
 <canvas id="c"></canvas>
 <script>
 // Build tool, served by tools/serve.ps1. For every run it writes:
-//   public/run/<slug>/index.html  - tiny page with preview-card tags that forwards to #run/<slug>
+//   public/run/<slug>/index.html  - tiny page with preview-card tags that forwards to breck/#run/<slug>
 //   public/run/<slug>/card.jpg    - the preview image: that part of the trail map with the run highlighted
 // plus public/og-image.jpg for the home page. Run makeAll() in the console after the data or map changes.
 const SITE = 'https://brecktrails.github.io/';
@@ -84,9 +84,9 @@ function pageHtml(name, slug, desc) {
 <meta property="og:image:height" content="${H}">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="../../icons/logo.svg" type="image/svg+xml">
-<meta http-equiv="refresh" content="0; url=../../#run/${slug}">
-<script>location.replace('../../#run/${slug}');<\/script>
-</head><body><p><a href="../../#run/${slug}">Open ${t} on Breck Trail Explorer</a></p></body></html>
+<meta http-equiv="refresh" content="0; url=../../breck/#run/${slug}">
+<script>location.replace('../../breck/#run/${slug}');<\/script>
+</head><body><p><a href="../../breck/#run/${slug}">Open ${t} on Breck Trail Explorer</a></p></body></html>
 `;
 }
 
