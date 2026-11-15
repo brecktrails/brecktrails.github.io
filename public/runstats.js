@@ -50,17 +50,51 @@
   }
 
   // ---------- Stats ----------
-  // [distance along the ground, elevation] down one piece. OpenSkiMap gives every run an elevation reading
-  // about every 25 m; the points the line was drawn with are much further apart and hide short steep pitches.
+  // [distance, elevation] down one piece. OpenSkiMap gives every run an elevation reading about every 25 m
+  // along its line; the points the line was drawn with are much further apart and hide short steep pitches.
+  // Distance is measured the way OpenSkiMap measures it: straight from one reading to the next, which on
+  // a winding run is a little shorter than following every bend.
   function linePoints(f) {
     const c = f.geometry.coordinates, cum = [0];
     for (let i = 1; i < c.length; i++) cum.push(cum[i - 1] + haversine(c[i - 1], c[i]));
     const total = cum[cum.length - 1], ep = f.properties.elevationProfile;
-    if (ep && ep.heights && ep.heights.length > 1) {
-      const n = ep.heights.length - 1;
-      return ep.heights.map((h, i) => [total * i / n, h]);
+    if (!ep || !ep.heights || ep.heights.length < 2 || !total) return c.map((p, i) => [cum[i], p[2]]).filter(p => p[1] != null);
+    const n = ep.heights.length - 1, out = [];
+    let seg = 1, prev = null, d = 0;
+    for (let i = 0; i <= n; i++) {
+      const at = total * i / n; // where along the line this reading was taken
+      while (seg < c.length - 1 && cum[seg] < at) seg++;
+      const t = cum[seg] > cum[seg - 1] ? (at - cum[seg - 1]) / (cum[seg] - cum[seg - 1]) : 0;
+      const here = [c[seg - 1][0] + t * (c[seg][0] - c[seg - 1][0]), c[seg - 1][1] + t * (c[seg][1] - c[seg - 1][1])];
+      if (prev) d += haversine(prev, here);
+      out.push([d, ep.heights[i]]);
+      prev = here;
     }
-    return c.map((p, i) => [cum[i], p[2]]).filter(p => p[1] != null);
+    return out;
+  }
+  // Length along the slope, total elevation change, and the steepest stretch of one piece. As on OpenSkiMap,
+  // the steepest stretch is taken over equal steps of about 25 m, with elevations read off the profile.
+  function pieceStats(pts) {
+    let inclined = 0, change = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const dd = pts[i][0] - pts[i - 1][0], de = pts[i][1] - pts[i - 1][1];
+      inclined += Math.hypot(dd, de); change += Math.abs(de);
+    }
+    const flat = pts[pts.length - 1][0];
+    let maxPitch = null;
+    if (flat >= 12.5) {
+      const steps = Math.ceil(flat / 25), step = flat / steps;
+      let j = 0;
+      const elevAt = d => {
+        while (j < pts.length - 2 && pts[j + 1][0] < d) j++;
+        const span = pts[j + 1][0] - pts[j][0];
+        return span > 0 ? pts[j][1] + Math.min(Math.max((d - pts[j][0]) / span, 0), 1) * (pts[j + 1][1] - pts[j][1]) : pts[j][1];
+      };
+      maxPitch = 0;
+      let last = elevAt(0);
+      for (let k = 1; k <= steps; k++) { const e = elevAt(k === steps ? flat : k * step); maxPitch = Math.max(maxPitch, Math.abs(e - last) / step); last = e; }
+    }
+    return { flat, inclined, change, maxPitch };
   }
   // The run's main line: pieces joined end to start, whichever route is longest. Spurs and parallel
   // variants that share the name are left out, so they don't inflate the length.
@@ -87,19 +121,14 @@
     const isArea = !lines.length;
     const main = mainLine(lines);
 
-    // Elevation profile down the main line
-    const pts = []; let offset = 0;
+    // Elevation profile down the main line. Stats are added up piece by piece, so a small mismatch in
+    // elevation where two pieces meet doesn't count as a steep pitch.
+    const pts = []; let offset = 0, inclined = 0, change = 0, maxPitch = 0;
     for (const l of main) {
       l.pts.forEach(([d, e], i) => { if (i || !pts.length) pts.push([offset + d, e]); });
       offset += l.len;
-    }
-    // Same definitions as OpenSkiMap: length is measured along the slope, average slope is total
-    // elevation change over ground distance, steepest pitch is the steepest ~25 m stretch
-    let inclined = 0, change = 0, maxPitch = 0;
-    for (let i = 1; i < pts.length; i++) {
-      const dd = pts[i][0] - pts[i - 1][0], de = pts[i][1] - pts[i - 1][1];
-      inclined += Math.hypot(dd, de); change += Math.abs(de);
-      if (dd >= 10) maxPitch = Math.max(maxPitch, Math.abs(de) / dd);
+      const st = pieceStats(l.pts);
+      inclined += st.inclined; change += st.change; maxPitch = Math.max(maxPitch, st.maxPitch || 0);
     }
     const flat = pts.length ? pts[pts.length - 1][0] : 0;
     const elevs = isArea
