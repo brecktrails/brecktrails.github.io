@@ -14,7 +14,7 @@
 // map as text (with its position), and a legend that gives each number a name. Numbers repeat between
 // Zermatt, Cervinia and Valtournenche, so each printed number is assigned to one of the three by where
 // it sits on the map. The color of the disc behind it gives the official difficulty.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, createReadStream } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, createReadStream, statSync } from 'node:fs';
 import readline from 'node:readline';
 import vm from 'node:vm';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -158,9 +158,10 @@ for (const f of features) {
     if (home) (byRef[home + '|' + k] ||= []).push(f);
   }
 }
-// build_runs.js (shared with Breckenridge and Vail) turns a run's pieces into stats and an elevation profile
+// public/runstats.js (shared with Breckenridge, Vail and the app itself) turns a run's pieces into stats and
+// an elevation profile
 const sandbox = vm.createContext({ fetch, setTimeout, console, URLSearchParams });
-vm.runInContext(readFileSync(new URL('tools/build_runs.js', root), 'utf8'), sandbox);
+vm.runInContext(readFileSync(new URL('public/runstats.js', root), 'utf8'), sandbox);
 const runs = {}, noData = [];
 for (const name of [...new Set(labels.map(l => l.name))]) {
   const l = labels.find(o => o.name === name);
@@ -168,14 +169,14 @@ for (const name of [...new Set(labels.map(l => l.name))]) {
   const fs = byRef[l.region + '|' + key(l.ref)] || (l.title ? features.filter(f => (osmRegion(f) === 'Z') === (l.region === 'Z') &&
     [l.title, l.ref + ' ' + l.title].some(n => plain(n) === plain(f.properties.name || ''))) : []);
   if (!fs.length) { noData.push(name); continue; }
-  runs[name] = { osmName: fs[0].properties.name, ...sandbox.summarize(fs) };
+  runs[name] = { osmName: fs[0].properties.name, ...sandbox.RunStats.summarize(fs) };
 }
 
 // ---------- Output ----------
 const W = r1(CROP.x1 - CROP.x0), H = r1(CROP.y1 - CROP.y0);
 const out = labels.map(({ region, title, ...l }) => l);
 mkdirSync(new URL('public/data/', root), { recursive: true });
-writeFileSync(new URL('public/data/zermatt.json', root), JSON.stringify({ width: W, height: H, labels: out, runs }));
+writeFileSync(new URL('public/data/zermatt.json', root), JSON.stringify({ built: statSync(osmPath).mtime.toISOString().slice(0, 10), width: W, height: H, labels: out, runs }));
 
 if (!arg('--no-images')) {
   mkdirSync(new URL('public/maps/', root), { recursive: true });

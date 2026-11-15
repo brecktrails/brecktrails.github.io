@@ -18,7 +18,8 @@ Unofficial planning tool, not affiliated with any ski resort. Trail maps © Brec
 | `public/resorts/<resort>.js` | Everything specific to a resort: wording, peaks or sectors, tips, weather spots, map files, units |
 | `public/app.js` | The app itself, shared by every resort: page layout, map, tappable runs, panels, suggestions, search |
 | `public/styles.css` | Look and layout, including the phone layout |
-| `public/data/breck.json`, `zermatt.json` | Run label positions on the map + OpenSkiMap details per run |
+| `public/runstats.js` | Looks runs up on OpenSkiMap and works out their stats; shared by the app (live) and the build tools (saved copy) |
+| `public/data/breck.json`, `zermatt.json` | Run label positions on the map + a saved copy of OpenSkiMap details per run |
 | `public/data/vail.json` | Vail runs for the "Compared to Vail" section |
 | `public/maps/` | Zermatt / Cervinia map images (built by `tools/build_zermatt.mjs`) |
 | `public/icons/`, `manifest.webmanifest`, `sw.js` | Logo, browser tab and home-screen icons, and what lets the site install as an app |
@@ -41,9 +42,20 @@ Then open http://localhost:8765/public/
 
 Every change merged into `main` is published automatically by the GitHub Actions workflow in `.github/workflows/pages.yml`, which deploys the `public/` folder to GitHub Pages. Progress shows on the repo's **Actions** tab; the site updates a minute or two after a merge.
 
+## Where run stats come from
+
+Opening a run looks it up on OpenSkiMap there and then, so its stats, elevation profile and "View on OpenSkiMap" link match what OpenSkiMap shows at that moment. Length, slope and profile colors are worked out the way OpenSkiMap's own site does it (`public/runstats.js`).
+
+The data files hold a saved copy of every run. It is what lists, search, suggestions and comparisons start from, what shows for a moment while a lookup is in flight, and what shows with no signal (labeled with the date it was saved). Runs someone has opened are remembered in their browser, so lists catch up as they go.
+
+- Breckenridge and Vail runs are found by name, so they keep working when OpenSkiMap changes its IDs.
+- Zermatt pistes are matched by number when the data is built, and looked up live by the OpenSkiMap IDs saved then. If a piste is re-edited and its ID changes, it shows the saved copy until the data is rebuilt.
+
+To refresh the saved copies: `node tools/build_breck.mjs`, `node tools/build_vail.mjs`, and `node tools/build_zermatt.mjs --no-images` (the last one needs the setup under Zermatt below, and a fresh `--bulk` download to pick up changes).
+
 ## Rebuilding the map and data
 
-Only needed for a new season's trail map or to refresh run data.
+Only needed for a new season's trail map.
 
 ### Breckenridge
 

@@ -2,7 +2,9 @@
 // One copy of this file serves every resort. Each resort has a page (breck/, zermatt/) that loads its
 // settings from resorts/<id>.js into window.RESORT, then this file. A resort's data file holds:
 //   labels: where each run name or number is printed on the map (PDF points, origin top-left)
-//   runs:   OpenSkiMap details for each run that could be matched
+//   runs:   OpenSkiMap details for each run that could be matched, as of the day the file was built.
+//           Opening a run looks it up on OpenSkiMap again (see "Live data"), so this copy is only what
+//           lists and search start from, and what shows when there is no signal.
 const R = window.RESORT;
 const BASE = '../'; // resort pages live one folder down from the shared files
 const FT = 3.28084;
@@ -20,8 +22,8 @@ const metric = () => units === 'metric';
 // Heights (elevation, vertical drop) and distances along a run. Everything is stored in meters.
 const fmtFt = m => (metric() ? Math.round(m).toLocaleString() + ' m' : Math.round(m * FT).toLocaleString() + ' ft');
 const fmtLen = m => (metric()
-  ? (m >= 1000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m).toLocaleString() + ' m')
-  : (m * FT >= 5280 ? (m * FT / 5280).toFixed(1) + ' mi' : fmtFt(m)));
+  ? (m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m).toLocaleString() + ' m')
+  : (m * FT >= 5280 ? (m * FT / 5280).toFixed(2) + ' mi' : fmtFt(m)));
 const deg = pct => Math.round(Math.atan(pct / 100) * 180 / Math.PI) + '°';
 // "Lower 4 O’Clock" -> "lower-4-oclock": used in share links and the run/<slug>/ preview pages
 const slugOf = name => norm(name).replace(/ /g, '-');
@@ -230,6 +232,7 @@ async function getWeather() {
     fetch(BASE + 'data/vail.json').then(r => r.json()).then(d => d.runs).catch(() => ({})),
   ]);
   const { width: W, height: H, labels, runs } = data;
+  const builtText = data.built ? new Date(data.built + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'earlier';
 
   // One entry per run name (a name can be printed in several places on the map)
   const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true }); // "9 Tuftern" before "10 Paradise"
@@ -239,7 +242,8 @@ async function getWeather() {
     RUNS[l.name].labels.push(l);
   }
   const ALL = Object.values(RUNS).sort((a, b) => byName(a.name, b.name));
-  for (const r of ALL) {
+  // Sets a run's rating from its details; called again whenever fresher details arrive
+  function rate(r) {
     if (EU) {
       // The color printed most often for this run on the map; OpenSkiMap's rating if the map had none
       const votes = {};
@@ -249,6 +253,15 @@ async function getWeather() {
     } else r.diff = diffOf(r.run);
     r.level = r.diff.level;
     r.naLevel = EU ? EU_TO_NA[r.level] : r.level; // the closest North American rating, for the Vail comparison
+  }
+  // Runs this browser has already looked up live are newer than the saved copy: start from those
+  const LIVE_KEY = 'live:' + R.id;
+  let liveSaved = {};
+  try { liveSaved = JSON.parse(localStorage.getItem(LIVE_KEY)) || {}; } catch { /* private browsing */ }
+  for (const r of ALL) {
+    const c = liveSaved[r.name];
+    if (c && c.at > Date.parse(data.built || 0)) r.run = c.run; else delete liveSaved[r.name];
+    rate(r);
   }
   $('run-count').textContent = ALL.length;
 
@@ -389,6 +402,53 @@ async function getWeather() {
     map.once('moveend', () => keepClearOfPanel(name));
   }
 
+  // ---------- Live data ----------
+  // The saved copy of a run goes out of date whenever the run is redrawn on OpenStreetMap. So each time a
+  // run is opened it is looked up on OpenSkiMap again: by name where that works (Breckenridge, Vail),
+  // otherwise by the OpenSkiMap IDs saved with it (Zermatt, whose pistes are matched by number; if those
+  // IDs have changed since the data was built, the saved copy stays, labeled with its date).
+  // The panel shows the saved copy at once and redraws when the answer arrives.
+  const liveState = {}; // 'run:Wirepatch' -> { state: 'loading' | 'live' | 'saved' | 'offline', at }
+  function refresh(kind, name) {
+    const key = kind + ':' + name, was = liveState[key];
+    if (was && (was.state !== 'offline' || Date.now() - was.at < 60e3)) return; // one lookup per visit; retry if it failed
+    const saved = kind === 'vail' ? VAIL[name] : RUNS[name].run;
+    const area = RunStats.AREAS[kind === 'vail' ? 'vail' : R.id];
+    if (!area && !saved?.osmIds?.length) return;
+    liveState[key] = { state: 'loading', at: Date.now() };
+    (area ? RunStats.fetchRun(name, area) : RunStats.fetchIds(saved.osmIds)).then(run => {
+      liveState[key] = { state: run ? 'live' : 'saved', at: Date.now() };
+      if (!run) return; // OpenSkiMap no longer has it under this name: keep what we have
+      if (kind === 'vail') {
+        // Keep what the build added by hand: the blurb, and Vail's own rating where it differs
+        VAIL[name] = { ...run, note: saved?.note || null, signature: !!saved?.signature,
+          ...(saved?.ratingSource ? { difficulty: saved.difficulty, ratingSource: saved.ratingSource } : {}) };
+      } else {
+        RUNS[name].run = run;
+        rate(RUNS[name]);
+        liveSaved[name] = { at: Date.now(), run };
+        try { localStorage.setItem(LIVE_KEY, JSON.stringify(liveSaved)); } catch { /* full or private browsing */ }
+      }
+    }).catch(() => { liveState[key] = { state: 'offline', at: Date.now() }; }).finally(() => {
+      // Redraw if that run is still on screen (but not while someone is typing in the Vail search box)
+      const view = stack[stack.length - 1];
+      if (view?.type !== 'run' || (kind === 'run' && view.name !== name)) return;
+      if (document.activeElement?.matches?.('[data-vail-search]')) return;
+      keepScroll(() => VIEWS.run(view));
+    });
+  }
+  function liveNote(kind, name, run) {
+    const s = liveState[kind + ':' + name]?.state;
+    const extra = run && run.pieces > run.mainPieces ? ' OpenSkiMap draws more than one line under this name; these stats are for the main one.' : '';
+    if (s === 'loading') return 'Checking OpenSkiMap for the latest…';
+    if (s === 'live') return 'Up to date with OpenSkiMap as of now.' + extra;
+    if (s === 'offline') return `Couldn’t reach OpenSkiMap, so this is the copy saved ${builtText}.` + extra;
+    return (run ? `Saved copy from ${builtText}.` : '') + extra;
+  }
+  // OpenSkiMap's IDs change when a run is re-edited, so the link uses the ID from the live lookup
+  // (the saved one until that arrives)
+  const openSkiMapUrl = run => 'https://openskimap.org/?obj=' + encodeURIComponent(run.primaryId);
+
   // ---------- Panel views ----------
   // The panel shows one view at a time; views opened from another view get a Back button.
   const panel = $('panel'), body = $('panel-body');
@@ -430,6 +490,7 @@ async function getWeather() {
 
   const VIEWS = {
     run({ name }) {
+      refresh('run', name);
       const r = RUNS[name], run = r.run, d = r.diff;
       const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(R.videoSearch(r).replace(/’/g, "'"));
       let html = `<div class="run-head"><h2>${esc(name)}</h2>
@@ -460,9 +521,9 @@ async function getWeather() {
         <a class="btn btn-yt" href="${yt}" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12a31 31 0 0 0 .5 4.8 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8zM9.8 15.1V8.9L15.6 12l-5.8 3.1z"/></svg>
           Watch on YouTube</a>`;
-      if (run) html += `<a class="btn btn-outline" href="https://openskimap.org/?obj=${encodeURIComponent(run.primaryId)}" target="_blank" rel="noopener">View on OpenSkiMap</a>`;
+      if (run) html += `<a class="btn btn-outline" href="${openSkiMapUrl(run)}" target="_blank" rel="noopener">View on OpenSkiMap</a>`;
       html += `</div>`;
-      if (run) html += `<p class="source">Data © OpenStreetMap contributors, via OpenSkiMap.</p>`;
+      html += `<p class="source">${liveNote('run', name, run)}${run ? ' Data © OpenStreetMap contributors, via OpenSkiMap.' : ''}</p>`;
       body.innerHTML = html;
       wireProfileCharts(body);
     },
@@ -618,15 +679,26 @@ async function getWeather() {
     if (run.lit) tags.push('Lit at night');
     return tags;
   }
-  // Elevation profile in the style of OpenSkiMap's: the area under the line is colored by how steep each
-  // stretch is, with axes, and hovering (or tapping) shows elevation and slope at that point.
+  // Elevation profile matching OpenSkiMap's: the area under the line is colored by the difficulty each
+  // stretch's steepness would rate (their scale: under 5% unrated, under 25% easy, under 40% intermediate,
+  // up to 100% advanced or expert, beyond that extreme), in the resort's own colors. Hovering (or tapping)
+  // shows elevation and slope at that point.
   const SLOPE_BANDS = [ // max grade % for the band, color, legend label
-    [20, '#4cb85c', 'Gentle, under 11°'],
-    [35, '#4a85c4', 'Moderate, 11–19°'],
-    [55, '#3b4048', 'Steep, 19–29°'],
-    [Infinity, '#d9480f', 'Very steep, 29°+'],
+    [5, '#b8bec7', 'Nearly flat'],
+    [25, EU ? '#4a85c4' : '#4cb85c', 'Easy pitch, under 14°'],
+    [40, EU ? '#d9363e' : '#4a85c4', 'Intermediate, 14–22°'],
+    [100, '#3b4048', 'Steep, 22–45°'],
+    [Infinity, '#e8730c', 'Extreme, 45°+'],
   ];
   const bandOf = grade => SLOPE_BANDS.findIndex(([max]) => grade < max);
+  // One band per stretch of the profile. Like OpenSkiMap, long profiles are colored in at most ~50 blocks,
+  // each taking its steepest stretch, so a short steep pitch still shows.
+  function slopeBands(profile) {
+    const raw = profile.slice(1).map(([d, e], i) => bandOf(Math.abs(e - profile[i][1]) / Math.max(d - profile[i][0], 1) * 100));
+    let block = 1;
+    while (raw.length / block > 50) block *= 2;
+    return raw.map((_, i) => Math.max(...raw.slice(i - i % block, i - i % block + block)));
+  }
   const CH = { w: 320, h: 168, l: 50, r: 312, t: 10, b: 136 }; // chart size and plot area
   function niceStep(span, target) {
     const raw = span / target, mag = 10 ** Math.floor(Math.log10(raw));
@@ -641,11 +713,12 @@ async function getWeather() {
     const lo = Math.floor(Math.min(...ftEls) / step) * step, hi = Math.ceil(Math.max(...ftEls) / step) * step;
     const X = d => CH.l + d / maxD * (CH.r - CH.l), Y = ft => CH.b - (ft - lo) / (hi - lo) * (CH.b - CH.t);
     // Colored bands: merge consecutive stretches of the same steepness into one shape
+    const bands = slopeBands(profile);
     let shapes = '', run = null;
     const flush = () => { if (run) shapes += `<polygon fill="${SLOPE_BANDS[run.band][1]}" points="${run.pts.join(' ')} ${run.x1},${CH.b} ${run.x0},${CH.b}"/>`; };
     for (let i = 0; i < profile.length - 1; i++) {
       const [d0, e0] = profile[i], [d1, e1] = profile[i + 1];
-      const band = bandOf(Math.abs(e1 - e0) / Math.max(d1 - d0, 1) * 100);
+      const band = bands[i];
       const a = `${X(d0).toFixed(1)},${Y(e0 * EL).toFixed(1)}`, b = `${X(d1).toFixed(1)},${Y(e1 * EL).toFixed(1)}`;
       if (run && run.band === band) { run.pts.push(b); run.x1 = X(d1).toFixed(1); }
       else { flush(); run = { band, pts: [a, b], x0: X(d0).toFixed(1), x1: X(d1).toFixed(1) }; }
@@ -667,7 +740,7 @@ async function getWeather() {
       axes += `<line x1="${x}" x2="${x}" y1="${CH.t}" y2="${CH.b}" class="grid"/><text x="${x}" y="${CH.b + 14}" class="axis" text-anchor="middle">${u === 0 ? '0' : miles ? +u.toFixed(2) + bigUnit : Math.round(u).toLocaleString() + elUnit}</text>`;
     }
     axes += `<text x="${CH.r}" y="${CH.b + 14}" class="axis" text-anchor="end">${miles ? toUnit(maxD).toFixed(2) + bigUnit : fmtFt(maxD)}</text>`;
-    const used = [...new Set(profile.slice(1).map(([d, e], i) => bandOf(Math.abs(e - profile[i][1]) / Math.max(d - profile[i][0], 1) * 100)))].sort();
+    const used = [...new Set(bands)].sort();
     return `<div class="profile"><h3>Elevation profile</h3>
       <div class="elev" data-profile='${JSON.stringify(profile)}' data-lo="${lo}" data-hi="${hi}">
         <svg viewBox="0 0 ${CH.w} ${CH.h}" class="elev-chart" role="img" aria-label="Elevation profile, colored by steepness">
@@ -677,7 +750,7 @@ async function getWeather() {
         <div class="elev-tip" hidden></div>
       </div>
       <ul class="elev-legend">${used.map(i => `<li><span class="swatch" style="background:${SLOPE_BANDS[i][1]}"></span>${SLOPE_BANDS[i][2]}</li>`).join('')}</ul>
-      <p class="source">Elevation data from OpenSkiMap. Hover or tap the chart for elevation and slope.</p></div>`;
+      <p class="source">Elevation data from OpenSkiMap, colored the way their chart is. Hover or tap for elevation and slope.</p></div>`;
   }
   // Hover/tap readout for every profile chart in the panel
   function wireProfileCharts(root) {
@@ -843,6 +916,7 @@ async function getWeather() {
     if (!r.run || !r.level || !Object.keys(VAIL).length) return '';
     const vName = vailPick[name] || defaultVail(r);
     if (!vName) return '';
+    refresh('vail', vName);
     const b = r.run, v = VAIL[vName], vd = diffOf(v);
     const cell = (x, f) => (x ? f(x) : '—');
     const rows = [

@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8"><title>extract</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="build_labels.js"></script>
-<script src="build_runs.js"></script>
+<script src="../public/runstats.js"></script>
 <style>body{margin:0;background:#fff} canvas{display:block}</style>
 </head><body>
 <canvas id="c"></canvas>
@@ -45,7 +45,7 @@ window.saveLabels = async () => {
 };
 window.saveRuns = async () => {
   const { labels } = await (await fetch('/tools/out/labels.json')).json();
-  const result = await buildRuns([...new Set(labels.map(l => l.name))]);
+  const result = await RunStats.buildRuns([...new Set(labels.map(l => l.name))], RunStats.AREAS.breck);
   await save('tools/out/runs.json', JSON.stringify(result));
   return { matched: Object.keys(result.runs).length, unmatched: result.unmatched };
 };
@@ -53,7 +53,7 @@ window.saveRuns = async () => {
 window.saveBundle = async () => {
   const labels = await (await fetch('/tools/out/labels.json')).json();
   const { runs } = await (await fetch('/tools/out/runs.json')).json();
-  await save('public/data/breck.json', JSON.stringify({ ...labels, runs }));
+  await save('public/data/breck.json', JSON.stringify({ built: new Date().toISOString().slice(0, 10), ...labels, runs }));
   return Object.keys(runs).length;
 };
 window.renderMap = async (scale, path, quality) => {

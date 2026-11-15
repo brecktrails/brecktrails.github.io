@@ -1,11 +1,10 @@
 // Builds public/data/vail.json: OpenSkiMap stats for every named Vail run, used by the "Compared to Vail"
 // section of a Breckenridge run. The hand-picked RUNS below are the "trademark" runs the app suggests first;
-// every other named run (from OpenStreetMap) can be searched. Reuses tools/build_runs.js.
+// every other named run (from OpenStreetMap) can be searched. Stats come from public/runstats.js, the same
+// code the app uses when it looks a run up live.
 // Run from the project folder:  node tools/build_vail.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
-
-const VAIL = { id: '88a22ba23468cf120025366ef40f004c9043546e', name: 'Vail', bbox: null, sections: true };
 
 // Trademark runs. name -> { note: what it's known for (only where we're confident), level: Vail's own
 // rating where it differs from OpenSkiMap's ("expert" = double black) }
@@ -42,10 +41,10 @@ const osm = await (await fetch(OVERPASS, { method: 'POST', headers: { 'User-Agen
 const curly = n => n.replace(/'/g, '’'); // match the app's spelling of apostrophes
 const allNames = [...new Set([...Object.keys(RUNS), ...osm.elements.map(e => curly(e.tags.name.split(' - ')[0].trim()))])];
 
-// build_runs.js is written for the browser; load its functions into a sandbox that has fetch
+// runstats.js is written for the browser; load it into a sandbox that has fetch
 const ctx = vm.createContext({ fetch, setTimeout, console, URLSearchParams });
-vm.runInContext(readFileSync(new URL('./build_runs.js', import.meta.url), 'utf8'), ctx);
-const { runs, unmatched } = await ctx.buildRuns(allNames, VAIL);
+vm.runInContext(readFileSync(new URL('../public/runstats.js', import.meta.url), 'utf8'), ctx);
+const { runs, unmatched } = await ctx.RunStats.buildRuns(allNames, ctx.RunStats.AREAS.vail);
 
 const out = {};
 for (const name of allNames.sort((a, b) => a.localeCompare(b))) {
@@ -54,6 +53,6 @@ for (const name of allNames.sort((a, b) => a.localeCompare(b))) {
   out[name] = { ...runs[name], note: extra?.note || null, signature: !!extra,
     ...(extra?.level ? { difficulty: extra.level, ratingSource: 'Vail' } : {}) };
 }
-writeFileSync(new URL('../public/data/vail.json', import.meta.url), JSON.stringify({ runs: out }));
+writeFileSync(new URL('../public/data/vail.json', import.meta.url), JSON.stringify({ built: new Date().toISOString().slice(0, 10), runs: out }));
 console.log(`${Object.keys(out).length} of ${allNames.length} Vail runs saved (${Object.values(out).filter(r => r.signature).length} trademark)` +
   (unmatched.length ? `; not found on OpenSkiMap: ${unmatched.join(', ')}` : ''));

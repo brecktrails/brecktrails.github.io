@@ -15,7 +15,7 @@ window.RESORT = {
   units: 'imperial', // feet and miles by default; visitors can switch
   scheme: 'na', // North American ratings: green circle, blue square, black diamonds
 
-  data: 'data/breck.json', // built by tools/extract.html
+  data: 'data/breck.json', // built by tools/extract.html; run stats refreshed by tools/build_breck.mjs
   map: {
     small: 'trailmap-small.jpg', sharp: 'trailmap.jpg',
     owner: 'Breckenridge Ski Resort',
