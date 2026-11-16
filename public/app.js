@@ -629,7 +629,7 @@ async function getWeather() {
         <div class="diff lift-kind"><span class="lift-ic">${liftIcon(l)}</span><span>${cap(liftKind(l))}</span><span class="sub">· ${areaName(l.area)}</span></div>`;
       if (l.photo) html += `<figure class="lift-photo">
           <img src="${esc(l.photo.src)}" width="${l.photo.w}" height="${l.photo.h}" alt="${esc(name)}" loading="lazy" onerror="this.closest('figure').remove()">
-          <figcaption>Photo: ${esc(l.photo.credit)}, ${esc(l.photo.license)}, via <a href="${esc(l.photo.page)}" target="_blank" rel="noopener">Wikimedia Commons</a></figcaption></figure>`;
+          <figcaption>Photo: ${esc(l.photo.credit)}, ${esc(l.photo.license)}, via <a href="${esc(l.photo.page)}" target="_blank" rel="noopener">${esc(l.photo.via || 'Wikimedia Commons')}</a></figcaption></figure>`;
       html += `<p>${esc(l.blurb)}</p>`;
       if (l.note) html += `<p class="diff-note">${esc(l.note)}</p>`;
       // Seats: what one chair, cabin or train carries
@@ -638,7 +638,7 @@ async function getWeather() {
       if (l.seats && per) stats.push([per, l.seats]);
       if (l.capacity) stats.push(['Capacity', l.capacity.toLocaleString(), 'people an hour']);
       if (l.detachable != null && ['chair_lift', 'gondola'].includes(l.type)) stats.push(['Detachable', l.detachable ? 'Yes' : 'No', l.detachable ? 'high-speed' : 'fixed-grip']);
-      if (l.rideSec) stats.push(['Ride time', 'about ' + Math.max(1, Math.round(l.rideSec / 60)) + ' min']);
+      if (l.rideSec) stats.push(['Ride time', 'about ' + Math.max(1, Math.round(l.rideSec / 60)) + ' min', l.rideEstimated ? 'estimate' : '']);
       if (l.verticalM) stats.push(['Vertical rise', fmtFt(l.verticalM)]);
       if (l.lengthM) stats.push(['Length', fmtLen(l.lengthM)]);
       if (l.topM) stats.push(['Top elevation', fmtFt(l.topM)]);
@@ -650,7 +650,8 @@ async function getWeather() {
       if (l.bubble) tags.push('Weather cover (bubble)');
       if (l.heated) tags.push('Heated seats');
       if (l.sections > 1 && l.type !== 't-bar') tags.push(l.sections + ' sections');
-      if (l.opened) tags.push('Opened ' + l.opened);
+      if (l.opened) tags.push((l.opened >= new Date().getFullYear() ? 'New in ' : 'Built ') + l.opened + (l.extended ? ', extended ' + l.extended : ''));
+      if (l.maker) tags.push('By ' + l.maker);
       if (tags.length) html += `<ul class="tags">${tags.map(t => `<li>${t}</li>`).join('')}</ul>`;
 
       // Terrain: runs that start at the top, then runs that branch off those on the way down
@@ -669,6 +670,7 @@ async function getWeather() {
         <a class="btn btn-yt" href="${yt}" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12a31 31 0 0 0 .5 4.8 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8zM9.8 15.1V8.9L15.6 12l-5.8 3.1z"/></svg>
           Watch on YouTube</a>
+        <a class="btn btn-outline" href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(yt.split('search_query=')[1] ? decodeURIComponent(yt.split('search_query=')[1]) : name)}" target="_blank" rel="noopener">${l.photo ? 'More photos' : 'Find photos'}</a>
         ${l.osmId ? `<a class="btn btn-outline" href="https://openskimap.org/?obj=${encodeURIComponent(l.osmId)}" target="_blank" rel="noopener">View on OpenSkiMap</a>` : ''}</div>
         <p class="source">${R.liftSource} Saved ${liftsBuiltText}. This doesn’t show whether the lift is running today: check the resort for hours and wind holds.</p>`;
       body.innerHTML = html;

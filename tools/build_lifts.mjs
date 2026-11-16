@@ -12,8 +12,12 @@
 //   - Type, seats, capacity, ride time, length, elevations: OpenSkiMap's lift records (lifts.geojson),
 //     saved in tools/out/<resort>_lifts.json; --fetch downloads a fresh copy. Breckenridge's seats and
 //     vertical rise come from the "Lift stats" table printed on its map.
-//   - Commentary, year opened, and which photo to show: written by hand in tools/lifts/<resort>.mjs.
-//   - Photos: Wikimedia Commons; the file's link, author and license are looked up and saved with it.
+//   - Year opened and builder, and capacity and ride time where OpenSkiMap has none: tools/lifts/reference.mjs,
+//     collected from skiresort.info's lift pages. A ride time nobody publishes is estimated from the lift's
+//     length and a typical line speed, and marked as an estimate.
+//   - Commentary and which photo to show: written by hand in tools/lifts/<resort>.mjs.
+//   - Photos: Wikimedia Commons (the file's link, author and license are looked up and saved with it), and
+//     a few Creative Commons photos on Flickr, whose details are in the tables.
 //   - Runs from the top: worked out from OpenSkiMap's run lines (see "Runs from the top" below).
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import readline from 'node:readline';
@@ -24,6 +28,7 @@ const root = new URL('../', import.meta.url);
 const id = process.argv[2];
 if (!['breck', 'zermatt'].includes(id)) throw new Error('usage: node tools/build_lifts.mjs breck|zermatt [--fetch]');
 const T = (await import(`./lifts/${id}.mjs`)).default;
+const REF = (await import('./lifts/reference.mjs')).default[id];
 const out = p => new URL('tools/out/' + p, root);
 mkdirSync(out(''), { recursive: true });
 const readJson = (url, fallback) => (existsSync(url) ? JSON.parse(readFileSync(url, 'utf8')) : fallback);
@@ -244,6 +249,7 @@ const commonsPath = out('commons.json');
 const commons = readJson(commonsPath, {});
 async function photoOf(file) {
   if (!file) return null;
+  if (typeof file === 'object') return file; // a photo from elsewhere, with its link, author and license given in the table
   if (!commons[file]) {
     const u = 'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({ action: 'query', format: 'json', titles: 'File:' + file, prop: 'imageinfo', iiprop: 'url|size|extmetadata', iiurlwidth: '800', iiextmetadatafilter: 'Artist|LicenseShortName|LicenseUrl' });
     let ii = null;
@@ -254,8 +260,8 @@ async function photoOf(file) {
     await sleep(1500);
     if (!ii?.thumburl) { console.log(`PHOTO NOT FOUND ON COMMONS: ${file}`); return null; }
     const strip = s => (s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-    commons[file] = { src: ii.thumburl, w: ii.thumbwidth, h: ii.thumbheight, page: ii.descriptionurl,
-      credit: strip(ii.extmetadata?.Artist?.value).slice(0, 80) || 'Wikimedia Commons', license: strip(ii.extmetadata?.LicenseShortName?.value) };
+    commons[file] = { via: 'Wikimedia Commons', src: ii.thumburl, w: ii.thumbwidth, h: ii.thumbheight, page: ii.descriptionurl,
+      credit: strip(ii.extmetadata?.Artist?.value).replace(/ \(talk\).*$| from .*$|^The original uploader was | at (German|English|Italian) Wikipedia.*$/g, '').slice(0, 60) || 'Wikimedia Commons', license: strip(ii.extmetadata?.LicenseShortName?.value) };
     writeFileSync(commonsPath, JSON.stringify(commons, null, 1));
   }
   return commons[file];
@@ -267,13 +273,22 @@ for (const lift of T.lifts) {
   const osm = osmStats(lift), table = printed[plain(lift.name)] || {};
   const tops = [...osm.tops, ...(lift.stops || [])];
   const bottomM = lift.bottomM ?? osm.bottomM;
-  const pick = k => lift[k] ?? table[k] ?? osm[k] ?? null;
+  const ref = REF[lift.name] || {};
+  const pick = k => lift[k] ?? table[k] ?? osm[k] ?? ref[k] ?? null;
+  const type = pick('type'), lengthM = pick('lengthM'), detachable = pick('detachable');
+  // No published ride time: length over a typical line speed for this kind of lift, in meters a second
+  let rideSec = pick('rideSec'), rideEstimated = false;
+  if (!rideSec && lengthM) {
+    const speed = { gondola: 5, mixed_lift: 5, cable_car: 8, funicular: 8, 't-bar': 2.5, platter: 2 }[type] ?? (detachable ? 5 : 2.2);
+    rideSec = Math.round(lengthM / speed / 30) * 30; rideEstimated = true;
+  }
+
   lifts.push({
-    name: lift.name, area: String(lift.area), type: pick('type'), seats: pick('seats'),
-    detachable: pick('detachable'), bubble: pick('bubble'), heated: pick('heated'),
-    capacity: pick('capacity'), rideSec: pick('rideSec'), lengthM: pick('lengthM'),
+    name: lift.name, area: String(lift.area), type, seats: pick('seats'),
+    detachable, bubble: pick('bubble'), heated: pick('heated'),
+    capacity: pick('capacity'), rideSec, rideEstimated, lengthM,
     bottomM, topM: pick('topM'), verticalM: lift.verticalM ?? osm.verticalM ?? table.verticalM ?? null,
-    mapVerticalM: table.verticalM ?? null, sections: osm.sections || 1, opened: lift.opened ?? null,
+    mapVerticalM: table.verticalM ?? null, sections: osm.sections || 1, opened: pick('opened'), extended: ref.extended ?? null, maker: ref.maker ?? null,
     blurb: lift.blurb, note: lift.note ?? null, osmId: osm.osmId ?? null, photo: await photoOf(lift.photo),
     lines: lift.paths.map(s => s.pts.map(p => [r1(p[0] - crop.x0), r1(p[1] - crop.y0)])),
     labels: lift.labels.map(l => ({ x: r1(l.x - crop.x0), y: r1(l.y - crop.y0), w: r1(l.w), h: r1(l.h), rot: r1(l.rot) })),

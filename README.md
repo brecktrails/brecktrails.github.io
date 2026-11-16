@@ -60,9 +60,10 @@ To refresh the saved copies: `node tools/build_breck.mjs`, `node tools/build_vai
 `node tools/build_lifts.mjs breck` and `node tools/build_lifts.mjs zermatt` write the lift files (same one-time setup and PDFs as Zermatt below; add `--fetch` to download OpenSkiMap's current lift list, about 70 MB, read once and not kept).
 
 - **The line on the map** is read out of the trail map PDF, where lift lines are drawn in one color and width. Breckenridge prints each lift's name along its line, which says whose line it is. Zermatt prints no lift names, so `tools/lifts/zermatt.mjs` gives a point on each lift's line; the tool lists any line no lift has claimed.
-- **Type, seats, capacity, ride time, length and elevations** are OpenSkiMap's. Breckenridge's seats and vertical rise come from the "Lift stats" table printed on its map. Where OpenSkiMap has no figure, the panel leaves it out.
-- **Descriptions and years** are written by hand in `tools/lifts/<resort>.mjs`.
-- **Photos** are shown straight from Wikimedia Commons, with author and license under each. Only lifts with a suitable photo there have one.
+- **Type, seats, capacity, ride time, length and elevations** are OpenSkiMap's. Breckenridge's seats and vertical rise come from the "Lift stats" table printed on its map.
+- **Year built, builder, and any capacity or ride time OpenSkiMap lacks** are in `tools/lifts/reference.mjs`, collected by hand from skiresort.info's lift pages. The few ride times nobody publishes are worked out from the lift's length and a typical line speed, and the panel marks them "estimate".
+- **Descriptions** are written by hand in `tools/lifts/<resort>.mjs`.
+- **Photos** are shown straight from Wikimedia Commons, or from Creative Commons photos on Flickr, with author and license under each. Only freely licensed photos are used, so only lifts that have one get a photo; every lift has a "Find photos" button that opens an image search instead.
 - **Runs from the top** are worked out from where runs start on OpenSkiMap: runs that begin by a top station, then runs that branch off those on the way down, staying between the lift's bottom and top. It is a guide, not a route planner.
 
 Unlike runs, lifts are not looked up live: the panel shows the saved copy and its date. Small beginner carpets are left out.

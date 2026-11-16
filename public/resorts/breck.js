@@ -17,7 +17,7 @@ window.RESORT = {
 
   data: 'data/breck.json', // built by tools/extract.html; run stats refreshed by tools/build_breck.mjs
   lifts: 'data/breck-lifts.json', // built by tools/build_lifts.mjs
-  liftSource: 'Seats and vertical rise are from the lift table on the official trail map; the rest is from OpenSkiMap (© OpenStreetMap contributors).',
+  liftSource: 'Seats and vertical rise are from the lift table on the official trail map. Other figures are from OpenSkiMap (© OpenStreetMap contributors), with years, builders and gaps filled from skiresort.info.',
   map: {
     small: 'trailmap-small.jpg', sharp: 'trailmap.jpg',
     owner: 'Breckenridge Ski Resort',

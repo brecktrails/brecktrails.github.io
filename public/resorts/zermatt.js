@@ -18,7 +18,7 @@ window.RESORT = {
 
   data: 'data/zermatt.json', // built by tools/build_zermatt.mjs
   lifts: 'data/zermatt-lifts.json', // built by tools/build_lifts.mjs
-  liftSource: 'Lift details are from OpenSkiMap (© OpenStreetMap contributors).',
+  liftSource: 'Lift details are from OpenSkiMap (© OpenStreetMap contributors), with years, builders and gaps filled from skiresort.info.',
   liftSearch: l => (['cervinia', 'valtournenche'].includes(l.area) ? 'cervinia ' : 'zermatt ') + l.name + ' lift',
   map: {
     small: 'maps/zermatt-small.jpg', sharp: 'maps/zermatt.jpg',
