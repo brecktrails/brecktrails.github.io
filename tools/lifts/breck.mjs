@@ -34,6 +34,7 @@ export default {
     { name: 'Rip’s Ride', label: 'RIP’S RIDE', osm: ['Rip’s Ride'], area: 8, ...superchair,
       blurb: 'The beginner lift at the Peak 8 base, serving the easiest green runs beside the learning area. Rebuilt as a high-speed quad, so the chairs slow right down for getting on and off.' },
     { name: 'Peak 8 SuperConnect', label: 'PEAK 8 SUPERCONNECT', osm: ['Peak 8 SuperConnect Lower', 'Peak 8 SuperConnect Upper'], area: 9, ...superchair,
+      photo: 'Breck2011 (5389956406).jpg', // not captioned by its author: recognized as the mid-station with Mach 1 above it
       blurb: 'The link from Peak 9 over to Peak 8. A long high-speed quad with a mid-station: you can get on at the bottom or at the mid-station, but nobody gets off until the top, near Vista Haus on Peak 8.' },
     { name: 'Imperial SuperChair', label: 'IMPERIAL SUPERCHAIR', osm: ['Imperial SuperChair'], area: 8, ...superchair,
       photo: { src: 'https://live.staticflickr.com/3607/3466091480_fd9f37b587_b.jpg', page: 'https://www.flickr.com/photos/12407269@N07/3466091480', credit: 'jatdoll', license: 'CC BY 2.0', via: 'Flickr', w: 768, h: 1024 },
@@ -41,6 +42,7 @@ export default {
     { name: '6-Chair', label: '6-CHAIR', osm: ['ref:6'], area: 8, ...fixed,
       blurb: 'An old, slow two-seater and a local favorite. It climbs to the treeline bowls and short steep pitches on upper Peak 8. Advanced and expert terrain only.' },
     { name: 'Horseshoe Bowl T-Bar', label: 'HORSESHOE BOWL T-BAR', osm: ['Horseshoe Bowl T-Bar'], area: 8, type: 't-bar', seats: 2,
+      photo: { src: 'https://live.staticflickr.com/3388/3252422742_af024d7359_b.jpg', page: 'https://www.flickr.com/photos/bwibbenm/3252422742/', credit: 'Brian Wibbenmeyer', license: 'CC BY-SA 2.0', via: 'Flickr', w: 1024, h: 683 },
       blurb: 'A surface lift: you stay standing on the snow and a T-shaped bar pulls you up, two people per bar. It reaches Horseshoe, Contest and North bowls on upper Peak 8, and you can lap them without going back to the base. Advanced terrain only, and tiring on a snowboard.' },
     { name: 'Independence SuperChair', label: 'INDEPENDENCE SUPERCHAIR', osm: ['Independence SuperChair'], area: 7, ...superchair, photo: 'LPSixPack.JPG',
       blurb: 'The main lift on Peak 7: a high-speed six-seater from the Peak 7 base, serving wide, rolling blue cruisers. A favorite for intermediates.' },
