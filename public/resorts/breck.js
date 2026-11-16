@@ -6,7 +6,7 @@ window.RESORT = {
   eyebrow: 'Breckenridge, Colorado · 5 peaks',
   lead: 'Plan your days on the mountain. Tap any run on the trail map to see how long and steep it is, get run ideas for your level, and watch videos before you go.',
   features: [
-    ['Tap any run', 'Length, vertical drop, steepness and an elevation profile.'],
+    ['Tap any run or lift', 'Length, vertical drop, steepness and an elevation profile for runs; type, ride and terrain for lifts.'],
     ['Runs for your level', 'Tell it how you ski and get suggestions, or highlight every green, blue or black.'],
     ['See it before you ski it', 'One tap to YouTube videos of any run.'],
   ],
@@ -16,6 +16,8 @@ window.RESORT = {
   scheme: 'na', // North American ratings: green circle, blue square, black diamonds
 
   data: 'data/breck.json', // built by tools/extract.html; run stats refreshed by tools/build_breck.mjs
+  lifts: 'data/breck-lifts.json', // built by tools/build_lifts.mjs
+  liftSource: 'Seats and vertical rise are from the lift table on the official trail map; the rest is from OpenSkiMap (© OpenStreetMap contributors).',
   map: {
     small: 'trailmap-small.jpg', sharp: 'trailmap.jpg',
     owner: 'Breckenridge Ski Resort',
@@ -48,7 +50,7 @@ window.RESORT = {
     areasTitle: 'The five peaks',
     areasIntro: 'Breck is five connected peaks, numbered 6 to 10 from right to left on the map. Lifts and runs link them all.',
     areasSource: 'Peak groupings are based on where each run sits on the trail map.',
-    search: 'Find a run…',
+    search: 'Find a run or lift…',
   },
 
   tips: [

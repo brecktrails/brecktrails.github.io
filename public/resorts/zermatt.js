@@ -17,6 +17,9 @@ window.RESORT = {
   scheme: 'eu', // European ratings: blue, red and black pistes, yellow off-piste itineraries
 
   data: 'data/zermatt.json', // built by tools/build_zermatt.mjs
+  lifts: 'data/zermatt-lifts.json', // built by tools/build_lifts.mjs
+  liftSource: 'Lift details are from OpenSkiMap (© OpenStreetMap contributors).',
+  liftSearch: l => (['cervinia', 'valtournenche'].includes(l.area) ? 'cervinia ' : 'zermatt ') + l.name + ' lift',
   map: {
     small: 'maps/zermatt-small.jpg', sharp: 'maps/zermatt.jpg',
     owner: 'Zermatt Bergbahnen AG',
@@ -39,7 +42,7 @@ window.RESORT = {
     areasTitle: 'The five sectors',
     areasIntro: 'One lift pass area in two countries: three sectors above Zermatt in Switzerland, linked over the Theodulpass to Breuil-Cervinia and Valtournenche in Italy. Piste numbers repeat between Zermatt, Cervinia and Valtournenche, so check which side you’re on.',
     areasSource: 'Sectors follow the legend on the official piste map.',
-    search: 'Find a piste or number…',
+    search: 'Find a piste, number or lift…',
   },
 
   tips: [

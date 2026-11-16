@@ -454,3 +454,21 @@ select {
   .resorts { grid-template-columns: 1fr; }
   .resort { min-height: 170px; }
 }
+
+/* ---------- Lifts ---------- */
+.lift-ic { display: inline-flex; color: var(--accent); }
+.lift-ic svg { width: 20px; height: 20px; }
+.chip .lift-ic svg { width: 16px; height: 16px; }
+.lift-photo { margin: 0 0 14px; }
+.lift-photo img { display: block; width: 100%; height: auto; max-height: 240px; object-fit: cover; border-radius: 12px; background: var(--bg); }
+.lift-photo figcaption { margin-top: 5px; font-size: 11.5px; color: var(--muted); }
+.lift-photo a { color: inherit; }
+.lift-runs h4 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.lift-runs .mix { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; font-weight: 600; }
+.lift-runs .mix span { display: inline-flex; align-items: center; gap: 5px; }
+.lift-runs .mix svg { width: 15px; height: 15px; }
+.lift-runs details { margin-top: 10px; }
+.lift-runs summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); padding: 6px 0; }
+.lifts-to { margin: 0 0 16px; }
+.lifts-to h3 { margin-bottom: 8px; }
+.lift-sub { display: block; font-size: 12px; font-weight: 400; }

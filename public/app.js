@@ -5,6 +5,8 @@
 //   runs:   OpenSkiMap details for each run that could be matched, as of the day the file was built.
 //           Opening a run looks it up on OpenSkiMap again (see "Live data"), so this copy is only what
 //           lists and search start from, and what shows when there is no signal.
+// A second, optional file (R.lifts, built by tools/build_lifts.mjs) holds the lifts: where each one's line is
+// drawn on the map, its details, and the runs you can reach from its top.
 const R = window.RESORT;
 const BASE = '../'; // resort pages live one folder down from the shared files
 const FT = 3.28084;
@@ -118,7 +120,7 @@ document.body.innerHTML = `
         </a>
         <div class="search">
           <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input id="search" type="search" placeholder="${T.search}" autocomplete="off" aria-label="Find a run">
+          <input id="search" type="search" placeholder="${T.search}" autocomplete="off" aria-label="Find a run or lift">
           <ul id="results" class="results" role="listbox" hidden></ul>
         </div>
         <a class="official" id="official-link" href="${R.map.official}" target="_blank" rel="noopener">Official map ↗</a>
@@ -130,6 +132,9 @@ document.body.innerHTML = `
         <button class="tool" data-open="list">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
           All runs</button>
+        ${R.lifts ? `<button class="tool" data-open="lifts">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 6.5 22 3.5M12 5v5M6.5 10h11M7 10v8h10M7 14h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Lifts</button>` : ''}
         <button class="tool" data-open="compare">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M17 4v16M3 8h8M13 16h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
           Compare <span id="cmp-count" class="badge" hidden></span></button>
@@ -226,11 +231,12 @@ async function getWeather() {
 }
 
 (async function main() {
-  const [data, VAIL] = await Promise.all([
+  const [data, VAIL, liftData] = await Promise.all([
     fetch(BASE + R.data).then(r => r.json()),
+    R.lifts ? fetch(BASE + R.lifts).then(r => r.json()).catch(() => ({ lifts: [] })) : { lifts: [] },
     // Signature Vail runs for the "Compared to Vail" section (built by tools/build_vail.mjs); optional
     fetch(BASE + 'data/vail.json').then(r => r.json()).then(d => d.runs).catch(() => ({})),
-  ]);
+  ]).then(([d, lifts, vail]) => [d, vail, lifts]);
   const { width: W, height: H, labels, runs } = data;
   const builtText = data.built ? new Date(data.built + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'earlier';
 
@@ -265,19 +271,52 @@ async function getWeather() {
   }
   $('run-count').textContent = ALL.length;
 
+  // ---------- Lifts ----------
+  const ALL_LIFTS = liftData.lifts;
+  const LIFTS = Object.fromEntries(ALL_LIFTS.map(l => [l.name, l]));
+  const liftsBuiltText = liftData.built ? new Date(liftData.built + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'earlier';
+  // What kind of lift it is, in plain words, and which little picture stands for it
+  const LIFT_TYPES = {
+    chair_lift: ['Chairlift', 'chair'], gondola: ['Gondola', 'gondola'], cable_car: ['Cable car', 'cabin'], mixed_lift: ['Gondola and chairlift in one', 'gondola'],
+    funicular: ['Funicular', 'train'], rack_railway: ['Cog railway', 'train'], 't-bar': ['T-bar', 'drag'], platter: ['Platter lift', 'drag'],
+  };
+  function liftKind(l) {
+    const seats = l.seats ? l.seats + '-seat ' : '';
+    if (l.type === 'chair_lift') return (l.detachable ? 'High-speed ' + seats : seats) + 'chairlift';
+    if (l.type === 'gondola') return seats + 'gondola';
+    return (LIFT_TYPES[l.type] || ['Lift'])[0];
+  }
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  function liftIcon(l) {
+    const cable = '<path d="M1 4.5 19 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>';
+    const shapes = {
+      chair: cable + '<path d="M10 3.5v6M5.5 9.5h9M6 9.5v6.5h8.5M6 13h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+      gondola: cable + '<path d="M10 3.5v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="4.5" y="7.5" width="11" height="10" rx="3" fill="currentColor"/><rect x="6.5" y="9.5" width="7" height="3.5" rx="1" fill="var(--surface)"/>',
+      cabin: cable + '<path d="M10 3.5v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="2.5" y="6.5" width="15" height="11" rx="2" fill="currentColor"/><rect x="4.5" y="8.5" width="11" height="4" rx="1" fill="var(--surface)"/>',
+      train: '<rect x="4" y="2" width="12" height="13" rx="3" fill="currentColor"/><rect x="6" y="4.5" width="8" height="4.5" rx="1" fill="var(--surface)"/><path d="M6.5 15 4.5 18.5M13.5 15l2 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="7" cy="12" r="1" fill="var(--surface)"/><circle cx="13" cy="12" r="1" fill="var(--surface)"/>',
+      drag: cable + '<path d="M10 3.5v11M5 14.5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>',
+    };
+    return `<svg viewBox="0 0 20 20" aria-hidden="true">${shapes[(LIFT_TYPES[l.type] || [0, 'chair'])[1]]}</svg>`;
+  }
+  // Lifts that drop you at the top of a run, for the run's own panel
+  const liftsTo = name => ALL_LIFTS.filter(l => l.runs.top.includes(name));
+
   // ---------- Landing <-> map routing ----------
   // #map shows the map; #run/<slug> shows the map with that run open (what share links point to)
   const BY_SLUG = Object.fromEntries(ALL.map(r => [slugOf(r.name), r.name]));
+  const LIFT_BY_SLUG = Object.fromEntries(ALL_LIFTS.map(l => [slugOf(l.name), l.name]));
   let mapReady = false;
   function route() {
     const runName = BY_SLUG[decodeURIComponent(location.hash.match(/^#run\/(.+)$/)?.[1] || '')];
-    const showMap = location.hash === '#map' || !!runName;
+    const liftName = LIFT_BY_SLUG[decodeURIComponent(location.hash.match(/^#lift\/(.+)$/)?.[1] || '')];
+    const showMap = location.hash === '#map' || !!runName || !!liftName;
     $('landing').hidden = showMap;
     $('app').hidden = !showMap;
     document.body.style.overflow = showMap ? 'hidden' : '';
     if (showMap && !mapReady) { initMap(); mapReady = true; }
     else if (showMap) map.invalidateSize();
     if (runName && selected !== runName) { showView({ type: 'run', name: runName }); flyToRun(runName); }
+    if (liftName && selectedLift !== liftName) { showView({ type: 'lift', name: liftName }); flyToLift(liftName); }
   }
   window.addEventListener('hashchange', route);
   // Keep the address bar pointing at what's on screen, without adding history entries
@@ -287,6 +326,10 @@ async function getWeather() {
   let map;
   const ll = (x, y) => [-y, x]; // PDF point -> Leaflet lat/lng (CRS.Simple, y flipped)
   const hotspots = {}; // run name -> polygons
+  const liftSpots = {}; // lift name -> { lines: the lift's line on the map, boxes: its name where the map prints it }
+  const LIFT_IDLE = { stroke: true, opacity: 0, weight: 10, fill: false };
+  const LIFT_HOVER = { stroke: true, color: '#0b63ce', opacity: 0.55, weight: 7, fill: false };
+  const LIFT_SELECTED = { stroke: true, color: '#ffd400', opacity: 0.85, weight: 8, fill: false };
 
   const IDLE = { stroke: false, fill: true, fillOpacity: 0 };
   const HOVER = { stroke: true, color: '#0b63ce', weight: 1.5, opacity: 0.9, fill: true, fillColor: '#0b63ce', fillOpacity: 0.15 };
@@ -350,6 +393,21 @@ async function getWeather() {
 
     map.createPane('hotspots').style.zIndex = 450;
     const renderer = L.canvas({ pane: 'hotspots', tolerance: isTouch ? 10 : 3 });
+    // Lifts go on first, so where a run's name sits on top of a lift line, tapping the name opens the run
+    for (const lift of ALL_LIFTS) {
+      const spot = liftSpots[lift.name] = {
+        lines: lift.lines.map(pts => L.polyline(pts.map(p => ll(p[0], p[1])), { ...LIFT_IDLE, renderer, interactive: true })),
+        boxes: lift.labels.map(l => L.polygon(textBox(l.x, l.y, l.w, l.h, l.rot, 2), { ...IDLE, renderer, interactive: true })),
+      };
+      for (const layer of [...spot.lines, ...spot.boxes]) {
+        layer.on('click', e => { L.DomEvent.stopPropagation(e); openLift(lift.name); });
+        if (!isTouch) {
+          layer.on('mouseover', () => { showLiftHover(lift.name); if (selectedLift !== lift.name) styleLift(lift.name, LIFT_HOVER, HOVER); });
+          layer.on('mouseout', () => { hideHover(); if (selectedLift !== lift.name) styleLift(lift.name, LIFT_IDLE, IDLE); });
+        }
+        layer.addTo(map);
+      }
+    }
     for (const l of labels) {
       const poly = L.polygon(labelShapes(l), { ...IDLE, renderer, interactive: true });
       poly.on('click', e => { L.DomEvent.stopPropagation(e); openRun(l.name); });
@@ -366,12 +424,20 @@ async function getWeather() {
   }
   const setStyle = (name, style) => hotspots[name].forEach(p => p.setStyle({ dashArray: null, ...style }));
   const boundsOf = name => L.featureGroup(hotspots[name]).getBounds();
+  const styleLift = (name, line, box) => { liftSpots[name].lines.forEach(p => p.setStyle(line)); liftSpots[name].boxes.forEach(p => p.setStyle(box)); };
+  const liftBounds = name => L.featureGroup([...liftSpots[name].lines, ...liftSpots[name].boxes]).getBounds();
 
   // ---------- Hover card (desktop) ----------
   function showHover(name) {
     const r = RUNS[name], d = r.diff;
     $('hovercard').innerHTML = `${signIcon(d.icon, d.color)}<div><div class="hc-name">${esc(name)}</div>
       <div class="hc-meta">${d.label} · ${areaName(r.area)}${r.run?.lengthM ? ' · ' + fmtLen(r.run.lengthM) : ''}</div></div>`;
+    $('hovercard').hidden = false;
+  }
+  function showLiftHover(name) {
+    const l = LIFTS[name];
+    $('hovercard').innerHTML = `<span class="lift-ic">${liftIcon(l)}</span><div><div class="hc-name">${esc(name)}</div>
+      <div class="hc-meta">${cap(liftKind(l))}${l.verticalM ? ' · ' + fmtFt(l.verticalM) + ' rise' : ''}</div></div>`;
     $('hovercard').hidden = false;
   }
   const hideHover = () => { $('hovercard').hidden = true; };
@@ -386,9 +452,9 @@ async function getWeather() {
     hotspots[name].forEach(p => p.bringToFront());
   }
   // Nudge the map so the selected label isn't hidden behind the panel / bottom sheet
-  function keepClearOfPanel(name) {
+  function keepClearOfPanel(name, bounds = boundsOf(name)) {
     const size = map.getSize();
-    const p = map.latLngToContainerPoint(boundsOf(name).getCenter());
+    const p = map.latLngToContainerPoint(bounds.getCenter());
     if (isMobile()) {
       const sheetTop = size.y - $('panel').offsetHeight;
       if (p.y > sheetTop - 40 || p.y < 20) map.panBy([0, p.y - sheetTop / 2]);
@@ -400,6 +466,23 @@ async function getWeather() {
   function flyToRun(name) {
     map.flyTo(boundsOf(name).getCenter(), Math.max(map.getZoom(), 0.5), { duration: 0.6 });
     map.once('moveend', () => keepClearOfPanel(name));
+  }
+
+  let selectedLift = null;
+  function highlightLift(name) {
+    if (selectedLift && selectedLift !== name) styleLift(selectedLift, LIFT_IDLE, IDLE);
+    selectedLift = name;
+    if (name) styleLift(name, LIFT_SELECTED, SELECTED);
+  }
+  function flyToLift(name) {
+    if (!liftSpots[name].lines.length && !liftSpots[name].boxes.length) return;
+    const bounds = liftBounds(name);
+    if (isMobile()) { // too little room above the bottom sheet for a whole lift: show its middle, as for a run
+      map.flyTo(bounds.getCenter(), Math.max(map.getZoom(), 0.5), { duration: 0.6 });
+      return map.once('moveend', () => keepClearOfPanel(name, bounds));
+    }
+    // Show the whole lift, in the part of the map the panel doesn't cover
+    map.flyToBounds(bounds, { paddingTopLeft: [40, 40], paddingBottomRight: [$('panel').offsetWidth + 50, 40], maxZoom: 1.5, duration: 0.6 });
   }
 
   // ---------- Live data ----------
@@ -466,7 +549,8 @@ async function getWeather() {
     panel.scrollTop = view.scroll || 0;
     document.querySelectorAll('.tool[data-open]').forEach(b => b.setAttribute('aria-current', b.dataset.open === view.type));
     highlightRun(view.type === 'run' ? view.name : null);
-    setHash(view.type === 'run' ? '#run/' + slugOf(view.name) : '#map');
+    highlightLift(view.type === 'lift' ? view.name : null);
+    setHash(view.type === 'run' ? '#run/' + slugOf(view.name) : view.type === 'lift' ? '#lift/' + slugOf(view.name) : '#map');
   }
   function back() {
     stack.pop();
@@ -477,6 +561,7 @@ async function getWeather() {
     panel.hidden = true;
     document.body.classList.remove('panel-open');
     highlightRun(null);
+    highlightLift(null);
     document.querySelectorAll('.tool[data-open]').forEach(b => b.setAttribute('aria-current', 'false'));
     setHash('#map');
   }
@@ -486,6 +571,10 @@ async function getWeather() {
   function openRun(name, { from } = {}) {
     if (from) { saveScroll(); showView({ type: 'run', name }, { push: true }); flyToRun(name); }
     else { showView({ type: 'run', name }); keepClearOfPanel(name); }
+  }
+  function openLift(name, { from } = {}) {
+    if (from) { saveScroll(); showView({ type: 'lift', name }, { push: true }); flyToLift(name); }
+    else showView({ type: 'lift', name });
   }
 
   const VIEWS = {
@@ -512,10 +601,12 @@ async function getWeather() {
         const tags = tagsOf(run);
         if (tags.length) html += `<ul class="tags">${tags.map(t => `<li>${t}</li>`).join('')}</ul>`;
         if (run.description) html += `<p>${esc(run.description)}</p>`;
+        html += liftsToHtml(name);
         html += profileChart(run.profile);
         html += vailSection(name);
       } else {
         html += `<p class="empty">OpenSkiMap doesn’t have details for this run yet.${EU ? '' : ' Its color on the trail map shows the official difficulty.'}</p>`;
+        html += liftsToHtml(name);
       }
       html += `<div class="actions">
         <a class="btn btn-yt" href="${yt}" target="_blank" rel="noopener">
@@ -526,6 +617,72 @@ async function getWeather() {
       html += `<p class="source">${liveNote('run', name, run)}${run ? ' Data © OpenStreetMap contributors, via OpenSkiMap.' : ''}</p>`;
       body.innerHTML = html;
       wireProfileCharts(body);
+    },
+
+    lift({ name }) {
+      const l = LIFTS[name];
+      const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent((R.liftSearch || (x => R.name + ' ' + x.name))(l).replace(/’/g, "'"));
+      let html = `<div class="run-head"><h2>${esc(name)}</h2>
+          <button class="share" data-share-lift="${esc(name)}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Share</button></div>
+        <div class="diff lift-kind"><span class="lift-ic">${liftIcon(l)}</span><span>${cap(liftKind(l))}</span><span class="sub">· ${areaName(l.area)}</span></div>`;
+      if (l.photo) html += `<figure class="lift-photo">
+          <img src="${esc(l.photo.src)}" width="${l.photo.w}" height="${l.photo.h}" alt="${esc(name)}" loading="lazy" onerror="this.closest('figure').remove()">
+          <figcaption>Photo: ${esc(l.photo.credit)}, ${esc(l.photo.license)}, via <a href="${esc(l.photo.page)}" target="_blank" rel="noopener">Wikimedia Commons</a></figcaption></figure>`;
+      html += `<p>${esc(l.blurb)}</p>`;
+      if (l.note) html += `<p class="diff-note">${esc(l.note)}</p>`;
+      // Seats: what one chair, cabin or train carries
+      const per = { chair_lift: 'Seats per chair', gondola: 'Seats per cabin', cable_car: 'People per cabin', funicular: 'People per train', 't-bar': 'Riders per bar', platter: 'Riders per platter' }[l.type];
+      const stats = [];
+      if (l.seats && per) stats.push([per, l.seats]);
+      if (l.capacity) stats.push(['Capacity', l.capacity.toLocaleString(), 'people an hour']);
+      if (l.detachable != null && ['chair_lift', 'gondola'].includes(l.type)) stats.push(['Detachable', l.detachable ? 'Yes' : 'No', l.detachable ? 'high-speed' : 'fixed-grip']);
+      if (l.rideSec) stats.push(['Ride time', 'about ' + Math.max(1, Math.round(l.rideSec / 60)) + ' min']);
+      if (l.verticalM) stats.push(['Vertical rise', fmtFt(l.verticalM)]);
+      if (l.lengthM) stats.push(['Length', fmtLen(l.lengthM)]);
+      if (l.topM) stats.push(['Top elevation', fmtFt(l.topM)]);
+      if (l.bottomM) stats.push(['Bottom elevation', fmtFt(l.bottomM)]);
+      html += `<dl class="stats">${stats.map(([k, v, s]) => `<div class="stat"><dt>${k}</dt><dd>${v}${s ? `<small>${s}</small>` : ''}</dd></div>`).join('')}</dl>`;
+      const tags = [];
+      if (l.type === 'chair_lift' && l.detachable === true) tags.push('Chairs slow down in the station');
+      if (l.type === 'chair_lift' && l.detachable === false) tags.push('Chairs don’t slow down to load');
+      if (l.bubble) tags.push('Weather cover (bubble)');
+      if (l.heated) tags.push('Heated seats');
+      if (l.sections > 1 && l.type !== 't-bar') tags.push(l.sections + ' sections');
+      if (l.opened) tags.push('Opened ' + l.opened);
+      if (tags.length) html += `<ul class="tags">${tags.map(t => `<li>${t}</li>`).join('')}</ul>`;
+
+      // Terrain: runs that start at the top, then runs that branch off those on the way down
+      const top = l.runs.top.map(n => RUNS[n]).filter(Boolean), below = l.runs.below.map(n => RUNS[n]).filter(Boolean);
+      if (top.length) {
+        const mix = Object.entries(LEVELS).map(([k, v]) => [v, [...top, ...below].filter(r => r.level === k).length]).filter(([, n]) => n);
+        const rows = rs => `<ul class="row-list">${rs.map(r => `<li><button class="row" data-run="${esc(r.name)}">${iconFor(r)}
+          <span class="name">${esc(r.name)}</span><span class="meta">${r.diff.label}${r.run?.lengthM ? ' · ' + fmtLen(r.run.lengthM) : ''}</span></button></li>`).join('')}</ul>`;
+        html += `<section class="lift-runs"><h3>Terrain it serves</h3>
+          <div class="mix">${mix.map(([v, n]) => `<span title="${v.sign}">${signIcon(v.icon, v.color)}${n}</span>`).join('')}<span class="sub">${top.length + below.length} runs within reach</span></div>
+          <h4>From the top</h4>${rows(top)}
+          ${below.length ? `<details><summary>${below.length} more on the way down</summary>${rows(below)}</details>` : ''}
+          <p class="source">Worked out from where runs start on OpenSkiMap, as a guide to what this lift is for. It doesn’t know about closures or hike-to gates.</p></section>`;
+      }
+      html += `<div class="actions">
+        <a class="btn btn-yt" href="${yt}" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12a31 31 0 0 0 .5 4.8 3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-4.8 31 31 0 0 0-.5-4.8zM9.8 15.1V8.9L15.6 12l-5.8 3.1z"/></svg>
+          Watch on YouTube</a>
+        ${l.osmId ? `<a class="btn btn-outline" href="https://openskimap.org/?obj=${encodeURIComponent(l.osmId)}" target="_blank" rel="noopener">View on OpenSkiMap</a>` : ''}</div>
+        <p class="source">${R.liftSource} Saved ${liftsBuiltText}. This doesn’t show whether the lift is running today: check the resort for hours and wind holds.</p>`;
+      body.innerHTML = html;
+    },
+
+    lifts() {
+      body.innerHTML = `<h2>Lifts</h2>
+        <p class="intro">Tap a lift here, or its line on the map, for what it is, how long the ride takes and what it serves.</p>
+        ${AREAS.map(a => {
+          const mine = ALL_LIFTS.filter(l => l.area === a.id);
+          return mine.length ? `<h3>${a.name}</h3><ul class="row-list">${mine.map(l => `<li><button class="row" data-lift="${esc(l.name)}"><span class="icon lift-ic">${liftIcon(l)}</span>
+            <span class="name">${esc(l.name)}<span class="sub lift-sub">${cap(liftKind(l))}</span></span><span class="meta">${l.verticalM ? fmtFt(l.verticalM) + ' rise' : ''}</span></button></li>`).join('')}</ul>` : '';
+        }).join('')}
+        <p class="source">${ALL_LIFTS.length} lifts. Small beginner carpets aren’t listed.</p>`;
     },
 
     suggest() {
@@ -667,6 +824,14 @@ async function getWeather() {
         <p class="source">General advice for planning. On the mountain, follow posted signs, closures and ski patrol.</p>`;
     },
   };
+
+  // "Lifts to the top" on a run's panel
+  function liftsToHtml(name) {
+    const ls = liftsTo(name);
+    if (!ls.length) return '';
+    return `<div class="lifts-to"><h3>Lift${ls.length > 1 ? 's' : ''} to the top</h3><div class="chips">${ls.map(l =>
+      `<button class="chip" data-lift="${esc(l.name)}"><span class="lift-ic">${liftIcon(l)}</span>${esc(l.name)}</button>`).join('')}</div></div>`;
+  }
 
   function tagsOf(run) {
     const tags = [];
@@ -1017,6 +1182,15 @@ async function getWeather() {
     try { await navigator.clipboard.writeText(url); toast('Link copied: paste it anywhere'); }
     catch { prompt('Copy this link:', url); }
   }
+  async function shareLift(name) {
+    const url = SITE_URL + R.id + '/#lift/' + slugOf(name);
+    if (navigator.share && isTouch) {
+      try { await navigator.share({ title: name, text: `${name} at ${R.name}: ${liftKind(LIFTS[name])}`, url }); } catch { /* closed the share sheet */ }
+      return;
+    }
+    try { await navigator.clipboard.writeText(url); toast('Link copied: paste it anywhere'); }
+    catch { prompt('Copy this link:', url); }
+  }
   let toastTimer;
   function toast(msg) {
     const el = $('toast');
@@ -1032,6 +1206,8 @@ async function getWeather() {
     if (!t) return;
     const view = stack[stack.length - 1];
     if (t.dataset.share) return shareRun(t.dataset.share);
+    if (t.dataset.shareLift) return shareLift(t.dataset.shareLift);
+    if (t.dataset.lift) return openLift(t.dataset.lift, { from: view.type });
     if (t.dataset.vailOpen) {
       vailSearchFor = vailSearchFor === t.dataset.vailOpen ? null : t.dataset.vailOpen;
       keepScroll(() => VIEWS.run({ name: t.dataset.vailOpen }));
@@ -1111,17 +1287,21 @@ async function getWeather() {
   function showResults() {
     const q = norm(searchInput.value);
     if (!q) return hideResults();
-    const hits = ALL.filter(r => norm(r.name).includes(q))
+    // Runs and lifts together; names that start with what was typed come first
+    const hits = [...ALL, ...ALL_LIFTS.map(l => ({ lift: l, name: l.name }))].filter(r => norm(r.name).includes(q))
       .sort((a, b) => norm(b.name).startsWith(q) - norm(a.name).startsWith(q)).slice(0, 8);
     active = hits.length ? 0 : -1;
     resultsList.innerHTML = hits.length
-      ? hits.map((r, i) => `<li role="option" data-name="${esc(r.name)}" aria-selected="${i === 0}">${iconFor(r)}${esc(r.name)}<span class="meta">${areaName(r.area)}</span></li>`).join('')
-      : '<li aria-disabled="true">No matching runs</li>';
+      ? hits.map((r, i) => (r.lift
+        ? `<li role="option" data-name="${esc(r.name)}" data-kind="lift" aria-selected="${i === 0}"><span class="icon lift-ic">${liftIcon(r.lift)}</span>${esc(r.name)}<span class="meta">Lift · ${areaName(r.lift.area)}</span></li>`
+        : `<li role="option" data-name="${esc(r.name)}" aria-selected="${i === 0}">${iconFor(r)}${esc(r.name)}<span class="meta">${areaName(r.area)}</span></li>`)).join('')
+      : '<li aria-disabled="true">No matching runs or lifts</li>';
     resultsList.hidden = false;
   }
   function hideResults() { resultsList.hidden = true; active = -1; }
-  function choose(name) {
+  function choose(name, kind) {
     hideResults(); searchInput.value = ''; searchInput.blur();
+    if (kind === 'lift') { showView({ type: 'lift', name }); return flyToLift(name); }
     showView({ type: 'run', name });
     flyToRun(name);
   }
@@ -1133,9 +1313,9 @@ async function getWeather() {
       if (!items.length) return;
       active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
       items.forEach((li, i) => li.setAttribute('aria-selected', i === active));
-    } else if (e.key === 'Enter' && items[active]) choose(items[active].dataset.name);
+    } else if (e.key === 'Enter' && items[active]) choose(items[active].dataset.name, items[active].dataset.kind);
   });
-  resultsList.addEventListener('click', e => { const li = e.target.closest('li[data-name]'); if (li) choose(li.dataset.name); });
+  resultsList.addEventListener('click', e => { const li = e.target.closest('li[data-name]'); if (li) choose(li.dataset.name, li.dataset.kind); });
   document.addEventListener('click', e => { if (!e.target.closest('.search')) hideResults(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); hideResults(); } });
 
@@ -1148,5 +1328,5 @@ async function getWeather() {
   showWxChip();
 
   route();
-  window.APP = { get map() { return map; }, RUNS, openRun, showView, levelsOn }; // handy for debugging in the console
+  window.APP = { get map() { return map; }, RUNS, LIFTS, openRun, openLift, showView, levelsOn }; // handy for debugging in the console
 })();

@@ -2,7 +2,7 @@
 
 **Live site: https://brecktrails.github.io**
 
-Interactive versions of official ski trail maps for planning a trip. The home page lets you pick a resort: **Breckenridge, Colorado** (`/breck/`) or **Zermatt / Cervinia** (`/zermatt/`, which also covers Valtournenche). Both run the same app. Tap any run on the official map to see its length, vertical drop, steepness and elevation profile (from [OpenSkiMap](https://openskimap.org)), and jump to YouTube videos of it. Tools for first-time visitors: run suggestions by level, a filterable list of all runs, a guide to the five peaks, side-by-side run comparison, a "Compared to Vail" view on every run (stats and commentary against a signature Vail run), difficulty highlighting, live mountain weather (from [Open-Meteo](https://open-meteo.com)) and tips.
+Interactive versions of official ski trail maps for planning a trip. The home page lets you pick a resort: **Breckenridge, Colorado** (`/breck/`) or **Zermatt / Cervinia** (`/zermatt/`, which also covers Valtournenche). Both run the same app. Tap any run on the official map to see its length, vertical drop, steepness and elevation profile (from [OpenSkiMap](https://openskimap.org)), and jump to YouTube videos of it. Tap a lift's line (or, at Breckenridge, its name) to see what kind of lift it is, seats and capacity, whether it is a high-speed detachable, ride time, vertical rise, a short description, a photo where a freely licensed one exists, and the runs you can reach from the top. Tools for first-time visitors: run suggestions by level, a filterable list of all runs, a guide to the five peaks, side-by-side run comparison, a "Compared to Vail" view on every run (stats and commentary against a signature Vail run), difficulty highlighting, live mountain weather (from [Open-Meteo](https://open-meteo.com)) and tips.
 
 Zermatt / Cervinia differs where the mountain does: pistes are numbered rather than named on the map, ratings are European (blue, red, black, and yellow off-piste itineraries, read from the color printed on the map), and measurements default to meters (a button switches between meters and feet at either resort).
 
@@ -20,6 +20,8 @@ Unofficial planning tool, not affiliated with any ski resort. Trail maps © Brec
 | `public/styles.css` | Look and layout, including the phone layout |
 | `public/runstats.js` | Looks runs up on OpenSkiMap and works out their stats; shared by the app (live) and the build tools (saved copy) |
 | `public/data/breck.json`, `zermatt.json` | Run label positions on the map + a saved copy of OpenSkiMap details per run |
+| `public/data/breck-lifts.json`, `zermatt-lifts.json` | Lifts: where each one's line is on the map, its details, photo credit and the runs from its top (built by `tools/build_lifts.mjs`) |
+| `tools/lifts/<resort>.mjs` | The hand-written part of the lift data: descriptions, year opened, which photo, and for Zermatt where each lift's line is |
 | `public/data/vail.json` | Vail runs for the "Compared to Vail" section |
 | `public/maps/` | Zermatt / Cervinia map images (built by `tools/build_zermatt.mjs`) |
 | `public/icons/`, `manifest.webmanifest`, `sw.js` | Logo, browser tab and home-screen icons, and what lets the site install as an app |
@@ -52,6 +54,18 @@ The data files hold a saved copy of every run. It is what lists, search, suggest
 - Zermatt pistes are matched by number when the data is built, and looked up live by the OpenSkiMap IDs saved then. If a piste is re-edited and its ID changes, it shows the saved copy until the data is rebuilt.
 
 To refresh the saved copies: `node tools/build_breck.mjs`, `node tools/build_vail.mjs`, and `node tools/build_zermatt.mjs --no-images` (the last one needs the setup under Zermatt below, and a fresh `--bulk` download to pick up changes).
+
+## Where lift details come from
+
+`node tools/build_lifts.mjs breck` and `node tools/build_lifts.mjs zermatt` write the lift files (same one-time setup and PDFs as Zermatt below; add `--fetch` to download OpenSkiMap's current lift list, about 70 MB, read once and not kept).
+
+- **The line on the map** is read out of the trail map PDF, where lift lines are drawn in one color and width. Breckenridge prints each lift's name along its line, which says whose line it is. Zermatt prints no lift names, so `tools/lifts/zermatt.mjs` gives a point on each lift's line; the tool lists any line no lift has claimed.
+- **Type, seats, capacity, ride time, length and elevations** are OpenSkiMap's. Breckenridge's seats and vertical rise come from the "Lift stats" table printed on its map. Where OpenSkiMap has no figure, the panel leaves it out.
+- **Descriptions and years** are written by hand in `tools/lifts/<resort>.mjs`.
+- **Photos** are shown straight from Wikimedia Commons, with author and license under each. Only lifts with a suitable photo there have one.
+- **Runs from the top** are worked out from where runs start on OpenSkiMap: runs that begin by a top station, then runs that branch off those on the way down, staying between the lift's bottom and top. It is a guide, not a route planner.
+
+Unlike runs, lifts are not looked up live: the panel shows the saved copy and its date. Small beginner carpets are left out.
 
 ## Rebuilding the map and data
 
